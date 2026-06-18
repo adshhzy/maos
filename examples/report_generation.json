@@ -1,0 +1,14 @@
+﻿{
+  "id": "report-generation",
+  "name": "Report generation DAG",
+  "input": {"report": "weekly-business", "sections": ["sales", "ops", "finance"]},
+  "nodes": [
+    {"id": "prepare_report", "label": "Prepare report", "operation": "emit", "simulate": {"min_seconds": 6, "max_seconds": 14}, "params": {"report": "$input.report", "sections": "$input.sections"}},
+    {"id": "sales_section", "label": "Sales section", "operation": "status", "deps": ["prepare_report"], "simulate": {"min_seconds": 16, "max_seconds": 34}, "params": {"status": "ready", "details": {"section": "sales"}}},
+    {"id": "ops_section", "label": "Ops section", "operation": "status", "deps": ["prepare_report"], "simulate": {"min_seconds": 18, "max_seconds": 36}, "params": {"status": "ready", "details": {"section": "ops"}}},
+    {"id": "finance_section", "label": "Finance section", "operation": "status", "deps": ["prepare_report"], "simulate": {"min_seconds": 20, "max_seconds": 38}, "params": {"status": "ready", "details": {"section": "finance"}}},
+    {"id": "compile_report", "label": "Compile report", "operation": "join", "deps": ["sales_section", "ops_section", "finance_section"], "simulate": {"min_seconds": 10, "max_seconds": 24}, "params": {"fields": {"status": "compiled", "artifact": "weekly-business.pdf"}}},
+    {"id": "send_report", "label": "Send report", "operation": "template", "deps": ["compile_report"], "simulate": {"min_seconds": 6, "max_seconds": 12}, "params": {"fields": {"status": "sent", "message": "Sent ${deps_compile_report_artifact}"}}}
+  ]
+}
+

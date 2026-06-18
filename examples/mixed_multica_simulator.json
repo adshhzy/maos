@@ -1,0 +1,103 @@
+﻿{
+  "id": "mixed-multica-simulator",
+  "name": "Mixed Multica + Simulator Agent DAG",
+  "input": {
+    "project": "Persistent multi-agent orchestration kernel",
+    "goal": "Evaluate how to connect a durable Temporal orchestration layer with real Agent Services while preserving simulator-based tests.",
+    "constraints": [
+      "Long-running Agent work must not occupy workflow worker threads",
+      "Some nodes should run on real Multica agents",
+      "Some nodes should stay on simulator for deterministic tests"
+    ]
+  },
+  "nodes": [
+    {
+      "id": "prepare_brief",
+      "label": "Prepare brief",
+      "operation": "emit",
+      "params": {
+        "project": "$input.project",
+        "goal": "$input.goal",
+        "constraints": "$input.constraints"
+      },
+      "simulate": {
+        "min_seconds": 2,
+        "max_seconds": 5
+      }
+    },
+    {
+      "id": "strategy_review",
+      "label": "Real product strategy agent",
+      "operation": "agent_task",
+      "deps": ["prepare_brief"],
+      "agent": {
+        "backend": "multica",
+        "agent_key": "product_strategy",
+        "context_policy": "provided_context_only",
+        "runtime_profile": "maos_compact_agent",
+        "execution_mode": "multica",
+        "status": "in_progress",
+        "priority": "medium",
+        "poll_seconds": 30,
+        "prompt": "Review the project brief. Produce a concise product strategy note with target users, success criteria, rollout phases, and main risks. Finish by adding the result as a Multica comment and moving the task to in_review or done."
+      },
+      "timeout_seconds": 7200
+    },
+    {
+      "id": "scope_estimate",
+      "label": "Simulator scope estimate",
+      "operation": "template",
+      "deps": ["prepare_brief"],
+      "params": {
+        "fields": {
+          "status": "estimated",
+          "message": "Simulator estimated scope for ${deps_prepare_brief_project}",
+          "risk": "medium"
+        }
+      },
+      "simulate": {
+        "min_seconds": 2,
+        "max_seconds": 5
+      }
+    },
+    {
+      "id": "architecture_review",
+      "label": "Real architecture agent",
+      "operation": "agent_task",
+      "deps": ["prepare_brief", "scope_estimate"],
+      "agent": {
+        "backend": "multica",
+        "agent_key": "architect",
+        "context_policy": "provided_context_only",
+        "runtime_profile": "maos_compact_agent",
+        "execution_mode": "multica",
+        "status": "in_progress",
+        "priority": "high",
+        "poll_seconds": 30,
+        "prompt": "Use the upstream brief and simulator scope estimate. Produce an architecture integration plan covering API boundaries, data flow, failure modes, Temporal waiting strategy, and migration steps. Finish by adding the result as a Multica comment and moving the task to in_review or done."
+      },
+      "timeout_seconds": 7200
+    },
+    {
+      "id": "final_package",
+      "label": "Simulator final package",
+      "operation": "join",
+      "deps": ["strategy_review", "scope_estimate", "architecture_review"],
+      "params": {
+        "fields": {
+          "status": "complete",
+          "strategy_status": "$deps.strategy_review.status",
+          "strategy_note": "$deps.strategy_review.latest_comment",
+          "scope_message": "$deps.scope_estimate.message",
+          "architecture_status": "$deps.architecture_review.status",
+          "architecture_note": "$deps.architecture_review.latest_comment"
+        }
+      },
+      "simulate": {
+        "min_seconds": 2,
+        "max_seconds": 5
+      }
+    }
+  ]
+}
+

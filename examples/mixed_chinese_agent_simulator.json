@@ -1,0 +1,175 @@
+{
+  "id": "mixed-chinese-agent-simulator",
+  "name": "中文混合真实Agent与Simulator任务图",
+  "input": {
+    "project": "企业智能客服知识库上线",
+    "goal": "在两周内完成知识库上线评审、灰度发布方案、运营说明和上线准备度判断。",
+    "business_context": {
+      "target_users": ["一线客服", "客户成功经理", "售后支持团队"],
+      "success_metrics": [
+        "客服首响时间降低20%",
+        "常见问题自助解决率提升15%",
+        "上线后一周内严重误答为0"
+      ],
+      "constraints": [
+        "不能泄露客户隐私数据",
+        "上线前必须有人审阅关键回答",
+        "需要保留Simulator节点用于自动化测试"
+      ]
+    }
+  },
+  "nodes": [
+    {
+      "id": "requirements_snapshot",
+      "label": "Simulator 需求快照",
+      "operation": "emit",
+      "params": {
+        "项目": "$input.project",
+        "目标": "$input.goal",
+        "业务背景": "$input.business_context",
+        "输出要求": "整理成后续Agent可直接使用的任务背景。"
+      },
+      "simulate": {
+        "min_seconds": 8,
+        "max_seconds": 25
+      }
+    },
+    {
+      "id": "data_quality_check",
+      "label": "Simulator 数据质量检查",
+      "operation": "status",
+      "deps": ["requirements_snapshot"],
+      "params": {
+        "status": "已完成",
+        "检查范围": ["FAQ条目完整性", "敏感字段脱敏", "重复问题合并"],
+        "发现": {
+          "高风险": 1,
+          "中风险": 3,
+          "低风险": 8
+        },
+        "建议": "真实Agent应重点关注隐私、审核流和灰度发布策略。"
+      },
+      "simulate": {
+        "min_seconds": 15,
+        "max_seconds": 45
+      }
+    },
+    {
+      "id": "risk_inventory",
+      "label": "Simulator 风险清单生成",
+      "operation": "template",
+      "deps": ["requirements_snapshot"],
+      "params": {
+        "fields": {
+          "status": "已生成",
+          "主要风险": [
+            "知识库内容质量不稳定导致误答",
+            "客服团队缺少回滚和升级路径",
+            "灰度阶段监控指标不完整"
+          ],
+          "建议优先级": "先处理隐私和人工审核，再处理运营培训。"
+        }
+      },
+      "simulate": {
+        "min_seconds": 10,
+        "max_seconds": 35
+      }
+    },
+    {
+      "id": "product_rollout_plan",
+      "label": "真实Agent 产品灰度方案",
+      "operation": "agent_task",
+      "deps": ["requirements_snapshot", "risk_inventory"],
+      "agent": {
+        "backend": "multica",
+        "agent_key": "product_strategy",
+        "context_policy": "provided_context_only",
+        "runtime_profile": "maos_compact_agent",
+        "execution_mode": "multica",
+        "status": "in_progress",
+        "priority": "high",
+        "poll_seconds": 30,
+        "prompt": "请只基于上游A2A上下文，制定企业智能客服知识库的中文产品灰度上线方案。输出应包含目标用户、灰度批次、成功指标、风险控制、回滚条件和上线后观察窗口。完成后把最终结果作为Multica评论提交，并将任务状态更新为in_review或done。"
+      },
+      "timeout_seconds": 7200
+    },
+    {
+      "id": "architecture_guardrails",
+      "label": "真实Agent 架构与安全边界",
+      "operation": "agent_task",
+      "deps": ["requirements_snapshot", "data_quality_check"],
+      "agent": {
+        "backend": "multica",
+        "agent_key": "architect",
+        "context_policy": "provided_context_only",
+        "runtime_profile": "maos_compact_agent",
+        "execution_mode": "multica",
+        "status": "in_progress",
+        "priority": "high",
+        "poll_seconds": 30,
+        "prompt": "请只基于上游A2A上下文，给出智能客服知识库上线所需的架构与安全边界设计。输出应包含数据流、权限边界、隐私脱敏、人工审核节点、监控告警、失败降级和回滚接口。完成后把最终结果作为Multica评论提交，并将任务状态更新为in_review或done。"
+      },
+      "timeout_seconds": 7200
+    },
+    {
+      "id": "operation_playbook",
+      "label": "真实Agent 运营说明文档",
+      "operation": "agent_task",
+      "deps": ["product_rollout_plan", "risk_inventory"],
+      "agent": {
+        "backend": "multica",
+        "agent_key": "docs",
+        "context_policy": "provided_context_only",
+        "runtime_profile": "maos_compact_agent",
+        "execution_mode": "multica",
+        "status": "in_progress",
+        "priority": "medium",
+        "poll_seconds": 30,
+        "prompt": "请只基于上游A2A上下文，编写一份中文运营说明文档草案，面向客服主管和一线客服。内容包括上线前准备、灰度期间处理流程、误答反馈路径、人工升级标准、每日检查清单和常见问题。完成后把最终结果作为Multica评论提交，并将任务状态更新为in_review或done。"
+      },
+      "timeout_seconds": 7200
+    },
+    {
+      "id": "readiness_review",
+      "label": "真实Agent 上线准备度评审",
+      "operation": "agent_task",
+      "deps": ["product_rollout_plan", "architecture_guardrails", "operation_playbook", "data_quality_check"],
+      "agent": {
+        "backend": "multica",
+        "agent_key": "qa",
+        "context_policy": "provided_context_only",
+        "runtime_profile": "maos_compact_agent",
+        "execution_mode": "multica",
+        "status": "in_progress",
+        "priority": "high",
+        "poll_seconds": 30,
+        "prompt": "请只基于上游A2A上下文，做一次中文上线准备度评审。输出必须包含通过/不通过结论、阻塞项、非阻塞风险、上线前必须完成的检查项、灰度监控指标和建议决策。完成后把最终结果作为Multica评论提交，并将任务状态更新为in_review或done。"
+      },
+      "timeout_seconds": 7200
+    },
+    {
+      "id": "launch_package",
+      "label": "Simulator 上线包汇总",
+      "operation": "join",
+      "deps": ["product_rollout_plan", "architecture_guardrails", "operation_playbook", "readiness_review"],
+      "params": {
+        "fields": {
+          "status": "上线包已汇总",
+          "产品方案状态": "$deps.product_rollout_plan.status",
+          "产品方案输出": "$deps.product_rollout_plan.latest_comment",
+          "架构方案状态": "$deps.architecture_guardrails.status",
+          "架构方案输出": "$deps.architecture_guardrails.latest_comment",
+          "运营文档状态": "$deps.operation_playbook.status",
+          "运营文档输出": "$deps.operation_playbook.latest_comment",
+          "准备度评审状态": "$deps.readiness_review.status",
+          "准备度评审输出": "$deps.readiness_review.latest_comment",
+          "汇总说明": "该节点由Simulator执行，用于验证真实Agent结果可以通过A2A上下文传递并被下游节点汇总。"
+        }
+      },
+      "simulate": {
+        "min_seconds": 12,
+        "max_seconds": 30
+      }
+    }
+  ]
+}

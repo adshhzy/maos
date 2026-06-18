@@ -1,0 +1,14 @@
+﻿{
+  "id": "data-ingestion",
+  "name": "Data ingestion DAG",
+  "input": {"dataset": "events-20260610", "sources": ["api", "s3", "db"]},
+  "nodes": [
+    {"id": "discover_sources", "label": "Discover sources", "operation": "emit", "simulate": {"min_seconds": 8, "max_seconds": 18}, "params": {"dataset": "$input.dataset", "sources": "$input.sources"}},
+    {"id": "pull_api", "label": "Pull API", "operation": "status", "deps": ["discover_sources"], "simulate": {"min_seconds": 15, "max_seconds": 35}, "params": {"status": "pulled", "details": {"source": "api"}}},
+    {"id": "pull_s3", "label": "Pull S3", "operation": "status", "deps": ["discover_sources"], "simulate": {"min_seconds": 20, "max_seconds": 42}, "params": {"status": "pulled", "details": {"source": "s3"}}},
+    {"id": "pull_db", "label": "Pull DB", "operation": "status", "deps": ["discover_sources"], "simulate": {"min_seconds": 18, "max_seconds": 38}, "params": {"status": "pulled", "details": {"source": "db"}}},
+    {"id": "normalize", "label": "Normalize records", "operation": "join", "deps": ["pull_api", "pull_s3", "pull_db"], "simulate": {"min_seconds": 14, "max_seconds": 30}, "params": {"fields": {"status": "normalized", "api": "$deps.pull_api.status", "s3": "$deps.pull_s3.status", "db": "$deps.pull_db.status"}}},
+    {"id": "publish_dataset", "label": "Publish dataset", "operation": "template", "deps": ["normalize"], "simulate": {"min_seconds": 8, "max_seconds": 18}, "params": {"fields": {"status": "published", "artifact": "warehouse-${input_dataset}"}}}
+  ]
+}
+

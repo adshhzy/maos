@@ -1,0 +1,136 @@
+﻿{
+  "id": "content-pipeline",
+  "name": "Content publishing DAG",
+  "input": {
+    "article_id": "article-20260610-analytics",
+    "title": "Temporal DAG Interpreter",
+    "channels": ["web", "newsletter", "social"]
+  },
+  "nodes": [
+    {
+      "id": "load_draft",
+      "label": "Load draft",
+      "operation": "emit",
+      "params": {
+        "article_id": "$input.article_id",
+        "title": "$input.title",
+        "channels": "$input.channels"
+      }
+    },
+    {
+      "id": "copy_edit",
+      "label": "Copy edit",
+      "operation": "status",
+      "deps": ["load_draft"],
+      "params": {
+        "status": "edited",
+        "details": {
+          "article_id": "$deps.load_draft.article_id"
+        }
+      }
+    },
+    {
+      "id": "seo_review",
+      "label": "SEO review",
+      "operation": "template",
+      "deps": ["load_draft"],
+      "params": {
+        "fields": {
+          "status": "optimized",
+          "message": "SEO title checked for ${deps_load_draft_title}"
+        }
+      }
+    },
+    {
+      "id": "legal_review",
+      "label": "Legal review",
+      "operation": "status",
+      "deps": ["load_draft"],
+      "params": {
+        "status": "approved",
+        "details": {
+          "review": "standard"
+        }
+      }
+    },
+    {
+      "id": "build_assets",
+      "label": "Build assets",
+      "operation": "template",
+      "deps": ["copy_edit", "seo_review"],
+      "params": {
+        "fields": {
+          "artifact": "assets-${input_article_id}.zip",
+          "copy_status": "${deps_copy_edit_status}",
+          "seo_status": "${deps_seo_review_status}"
+        }
+      }
+    },
+    {
+      "id": "approval_gate",
+      "label": "Approval gate",
+      "operation": "join",
+      "deps": ["copy_edit", "seo_review", "legal_review"],
+      "params": {
+        "fields": {
+          "decision": "approved",
+          "copy": "$deps.copy_edit.status",
+          "seo": "$deps.seo_review.status",
+          "legal": "$deps.legal_review.status"
+        }
+      }
+    },
+    {
+      "id": "publish_web",
+      "label": "Publish web",
+      "operation": "template",
+      "deps": ["build_assets", "approval_gate"],
+      "params": {
+        "fields": {
+          "status": "published",
+          "artifact": "${deps_build_assets_artifact}",
+          "message": "Published ${input_article_id} to web"
+        }
+      }
+    },
+    {
+      "id": "publish_newsletter",
+      "label": "Publish newsletter",
+      "operation": "template",
+      "deps": ["approval_gate"],
+      "params": {
+        "fields": {
+          "status": "scheduled",
+          "message": "Newsletter scheduled for ${input_article_id}"
+        }
+      }
+    },
+    {
+      "id": "publish_social",
+      "label": "Publish social",
+      "operation": "template",
+      "deps": ["approval_gate"],
+      "params": {
+        "fields": {
+          "status": "queued",
+          "message": "Social posts queued for ${input_article_id}"
+        }
+      }
+    },
+    {
+      "id": "publish_summary",
+      "label": "Publish summary",
+      "operation": "join",
+      "deps": ["publish_web", "publish_newsletter", "publish_social"],
+      "params": {
+        "fields": {
+          "status": "complete",
+          "web": "$deps.publish_web.status",
+          "newsletter": "$deps.publish_newsletter.status",
+          "social": "$deps.publish_social.status"
+        }
+      }
+    }
+  ]
+}
+

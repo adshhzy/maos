@@ -1,0 +1,124 @@
+﻿{
+  "id": "mixed-product-launch-agents",
+  "name": "Mixed Product Launch Real Agents DAG",
+  "input": {
+    "product": "MAOS persistent orchestration kernel",
+    "launch_goal": "Prepare a private beta launch for teams coordinating long-running multi-agent work.",
+    "constraints": [
+      "Use real Multica agents for strategy and architecture judgment",
+      "Use simulator nodes for deterministic scoring and packaging",
+      "Keep all Agent context limited to the A2A payload"
+    ]
+  },
+  "nodes": [
+    {
+      "id": "launch_brief",
+      "label": "Simulator launch brief",
+      "operation": "emit",
+      "params": {
+        "product": "$input.product",
+        "goal": "$input.launch_goal",
+        "constraints": "$input.constraints"
+      },
+      "simulate": {
+        "min_seconds": 4,
+        "max_seconds": 10
+      }
+    },
+    {
+      "id": "market_strategy",
+      "label": "Real product strategy agent",
+      "operation": "agent_task",
+      "deps": ["launch_brief"],
+      "agent": {
+        "backend": "multica",
+        "agent_key": "product_strategy",
+        "context_policy": "provided_context_only",
+        "runtime_profile": "maos_compact_agent",
+        "execution_mode": "multica",
+        "status": "in_progress",
+        "priority": "medium",
+        "poll_seconds": 30,
+        "prompt": "Use the launch brief to produce a concise beta launch strategy. Include target users, value proposition, launch phases, success criteria, and major risks. Add the result as a Multica comment and move the task to in_review or done."
+      },
+      "timeout_seconds": 7200
+    },
+    {
+      "id": "architecture_fit",
+      "label": "Real architecture agent",
+      "operation": "agent_task",
+      "deps": ["launch_brief"],
+      "agent": {
+        "backend": "multica",
+        "agent_key": "architect",
+        "context_policy": "provided_context_only",
+        "runtime_profile": "maos_compact_agent",
+        "execution_mode": "multica",
+        "status": "in_progress",
+        "priority": "high",
+        "poll_seconds": 30,
+        "prompt": "Review the launch brief from a system architecture perspective. Identify readiness gaps, API boundary risks, scaling concerns, and migration recommendations. Add the result as a Multica comment and move the task to in_review or done."
+      },
+      "timeout_seconds": 7200
+    },
+    {
+      "id": "simulator_budget",
+      "label": "Simulator beta budget",
+      "operation": "template",
+      "deps": ["launch_brief"],
+      "params": {
+        "fields": {
+          "status": "estimated",
+          "budget_band": "medium",
+          "risk": "medium",
+          "message": "Simulator budget estimate for ${deps_launch_brief_product}"
+        }
+      },
+      "simulate": {
+        "min_seconds": 6,
+        "max_seconds": 16
+      }
+    },
+    {
+      "id": "readiness_review",
+      "label": "Real QA readiness agent",
+      "operation": "agent_task",
+      "deps": ["market_strategy", "architecture_fit", "simulator_budget"],
+      "agent": {
+        "backend": "multica",
+        "agent_key": "qa",
+        "context_policy": "provided_context_only",
+        "runtime_profile": "maos_compact_agent",
+        "execution_mode": "multica",
+        "status": "in_progress",
+        "priority": "medium",
+        "poll_seconds": 30,
+        "prompt": "Use the upstream strategy, architecture review, and budget estimate to create a beta readiness checklist. Include test gates, known risks, release blockers, and manual validation steps. Add the result as a Multica comment and move the task to in_review or done."
+      },
+      "timeout_seconds": 7200
+    },
+    {
+      "id": "launch_package",
+      "label": "Simulator launch package",
+      "operation": "join",
+      "deps": ["market_strategy", "architecture_fit", "simulator_budget", "readiness_review"],
+      "params": {
+        "fields": {
+          "status": "packaged",
+          "strategy_status": "$deps.market_strategy.status",
+          "strategy_note": "$deps.market_strategy.latest_comment",
+          "architecture_status": "$deps.architecture_fit.status",
+          "architecture_note": "$deps.architecture_fit.latest_comment",
+          "budget_message": "$deps.simulator_budget.message",
+          "readiness_status": "$deps.readiness_review.status",
+          "readiness_note": "$deps.readiness_review.latest_comment"
+        }
+      },
+      "simulate": {
+        "min_seconds": 4,
+        "max_seconds": 12
+      }
+    }
+  ]
+}
+

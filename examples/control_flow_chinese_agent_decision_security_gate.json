@@ -1,0 +1,124 @@
+{
+  "id": "control-flow-chinese-agent-decision-security-gate",
+  "name": "中文真实Agent决策分支 - 安全评审门",
+  "graph_type": "control_flow",
+  "max_total_visits": 14,
+  "input": {
+    "system": "多Agent任务编排内核",
+    "change": "允许用户上传带循环和条件分支的控制流图JSON",
+    "concerns": [
+      "租户隔离",
+      "循环保护",
+      "Agent输出可信度",
+      "审计日志"
+    ]
+  },
+  "start": "change_summary",
+  "nodes": [
+    {
+      "id": "change_summary",
+      "label": "Simulator 变更摘要",
+      "operation": "emit",
+      "params": {
+        "system": "$input.system",
+        "change": "$input.change",
+        "concerns": "$input.concerns"
+      },
+      "simulate": {
+        "min_seconds": 2,
+        "max_seconds": 5
+      }
+    },
+    {
+      "id": "architecture_controls",
+      "label": "真实Agent 架构控制",
+      "operation": "agent_task",
+      "join": "any",
+      "max_visits": 3,
+      "deps": [
+        "change_summary",
+        "security_review_gate"
+      ],
+      "agent": {
+        "backend": "multica",
+        "agent_key": "architect",
+        "context_policy": "provided_context_only",
+        "runtime_profile": "maos_compact_agent",
+        "execution_mode": "multica",
+        "status": "in_progress",
+        "priority": "high",
+        "poll_seconds": 30,
+        "prompt": "请只基于A2A payload，给出控制流图JSON执行的架构控制方案。若看到security_review_gate中的needs_revision评审意见，请合并其reason和required_changes重新生成方案。完成后把结果作为Multica评论提交，并将任务状态更新为in_review或done。"
+      },
+      "timeout_seconds": 7200
+    },
+    {
+      "id": "security_review_gate",
+      "label": "真实Agent 安全评审门",
+      "operation": "agent_task",
+      "join": "any",
+      "max_visits": 3,
+      "deps": [
+        "architecture_controls"
+      ],
+      "agent": {
+        "backend": "multica",
+        "agent_key": "security",
+        "context_policy": "provided_context_only",
+        "runtime_profile": "maos_compact_agent",
+        "execution_mode": "multica",
+        "status": "in_progress",
+        "priority": "high",
+        "poll_seconds": 30,
+        "prompt": "你是真实Agent安全评审门。请只基于A2A payload判断architecture_controls是否满足安全上线条件。最终评论末尾必须输出独立JSON代码块：{\"decision\":\"needs_revision或approved\",\"reason\":\"中文原因\",\"required_changes\":[\"修改项；没有则输出空数组\"],\"confidence\":0.0到1.0}。如果缺少循环保护、权限边界或审计策略，请输出needs_revision；否则输出approved。完成后把结果作为Multica评论提交，并将任务状态更新为in_review或done。"
+      },
+      "timeout_seconds": 7200
+    },
+    {
+      "id": "security_approval_package",
+      "label": "真实Agent 安全结论文档",
+      "operation": "agent_task",
+      "join": "any",
+      "deps": [
+        "architecture_controls",
+        "security_review_gate"
+      ],
+      "agent": {
+        "backend": "multica",
+        "agent_key": "docs",
+        "context_policy": "provided_context_only",
+        "runtime_profile": "maos_compact_agent",
+        "execution_mode": "multica",
+        "status": "in_progress",
+        "priority": "medium",
+        "poll_seconds": 30,
+        "prompt": "请只基于A2A payload，编写中文安全评审结论文档。必须包含security_review_gate的decision、reason、remaining risks和上线前检查清单。完成后把结果作为Multica评论提交，并将任务状态更新为in_review或done。"
+      },
+      "timeout_seconds": 7200
+    }
+  ],
+  "edges": [
+    {
+      "from": "change_summary",
+      "to": "architecture_controls",
+      "label": "设计控制"
+    },
+    {
+      "from": "architecture_controls",
+      "to": "security_review_gate",
+      "label": "真实安全评审"
+    },
+    {
+      "from": "security_review_gate",
+      "to": "architecture_controls",
+      "when": "last.decision == 'needs_revision'",
+      "label": "安全Agent要求修改，回到架构控制"
+    },
+    {
+      "from": "security_review_gate",
+      "to": "security_approval_package",
+      "when": "last.decision == 'approved'",
+      "label": "安全Agent批准"
+    }
+  ]
+}

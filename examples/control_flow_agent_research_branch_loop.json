@@ -1,0 +1,197 @@
+{
+  "id": "control-flow-agent-research-branch-loop",
+  "name": "Control-flow real Agent research branch loop",
+  "graph_type": "control_flow",
+  "max_total_visits": 18,
+  "input": {
+    "research_question": "Should MAOS expose graph templates as versioned public APIs?",
+    "audience": "platform engineering and product leadership",
+    "decision_deadline": "one week"
+  },
+  "start": "research_intake",
+  "nodes": [
+    {
+      "id": "research_intake",
+      "label": "Simulator research intake",
+      "operation": "emit",
+      "params": {
+        "question": "$input.research_question",
+        "audience": "$input.audience",
+        "deadline": "$input.decision_deadline",
+        "required_output": "A decision memo with product, architecture, and risk sections."
+      },
+      "simulate": {
+        "min_seconds": 2,
+        "max_seconds": 5
+      }
+    },
+    {
+      "id": "product_argument",
+      "label": "Real product argument",
+      "operation": "agent_task",
+      "deps": ["research_intake"],
+      "agent": {
+        "backend": "multica",
+        "agent_key": "product_strategy",
+        "context_policy": "provided_context_only",
+        "runtime_profile": "maos_compact_agent",
+        "execution_mode": "multica",
+        "status": "in_progress",
+        "priority": "medium",
+        "poll_seconds": 30,
+        "prompt": "Use only the A2A payload. Write the product argument for or against versioned graph template APIs. Include users, value, adoption risks, pricing/packaging implications, and success metrics. Add the final result as a Multica comment and move the task to in_review or done."
+      },
+      "timeout_seconds": 7200
+    },
+    {
+      "id": "architecture_argument",
+      "label": "Real architecture argument",
+      "operation": "agent_task",
+      "deps": ["research_intake", "product_argument"],
+      "agent": {
+        "backend": "multica",
+        "agent_key": "architect",
+        "context_policy": "provided_context_only",
+        "runtime_profile": "maos_compact_agent",
+        "execution_mode": "multica",
+        "status": "in_progress",
+        "priority": "medium",
+        "poll_seconds": 30,
+        "prompt": "Use only the A2A payload. Write the architecture argument for versioned graph template APIs. Include schema compatibility, migration, validation, Temporal replay constraints, security, and operational concerns. Add the final result as a Multica comment and move the task to in_review or done."
+      },
+      "timeout_seconds": 7200
+    },
+    {
+      "id": "confidence_gate",
+      "label": "Confidence gate",
+      "type": "condition",
+      "operation": "condition",
+      "join": "any",
+      "max_visits": 3,
+      "params": {
+        "decision_note": "First pass asks for risk evidence; second pass proceeds to memo."
+      }
+    },
+    {
+      "id": "argument_bundle",
+      "label": "Simulator argument bundle",
+      "operation": "join",
+      "join": "any",
+      "max_visits": 3,
+      "deps": ["product_argument", "architecture_argument", "risk_evidence"],
+      "params": {
+        "fields": {
+          "status": "bundled",
+          "product_status": "$deps.product_argument.status",
+          "product_note": "$deps.product_argument.latest_comment",
+          "architecture_status": "$deps.architecture_argument.status",
+          "architecture_note": "$deps.architecture_argument.latest_comment"
+        }
+      },
+      "simulate": {
+        "min_seconds": 2,
+        "max_seconds": 5
+      }
+    },
+    {
+      "id": "risk_evidence",
+      "label": "Simulator risk evidence",
+      "operation": "status",
+      "join": "any",
+      "params": {
+        "status": "evidence_added",
+        "details": {
+          "risks": [
+            "Template migration can break running graph instances",
+            "Validation needs tenant-level capability checks",
+            "Version pinning must be visible in the dashboard"
+          ]
+        }
+      },
+      "simulate": {
+        "min_seconds": 2,
+        "max_seconds": 6
+      }
+    },
+    {
+      "id": "decision_memo",
+      "label": "Real docs decision memo",
+      "operation": "agent_task",
+      "join": "any",
+      "deps": ["product_argument", "architecture_argument", "risk_evidence"],
+      "agent": {
+        "backend": "multica",
+        "agent_key": "docs",
+        "context_policy": "provided_context_only",
+        "runtime_profile": "maos_compact_agent",
+        "execution_mode": "multica",
+        "status": "in_progress",
+        "priority": "medium",
+        "poll_seconds": 30,
+        "prompt": "Use only the A2A payload. Produce a concise decision memo with recommendation, rationale, alternatives, risks, rollout plan, and open questions. Add the final result as a Multica comment and move the task to in_review or done."
+      },
+      "timeout_seconds": 7200
+    },
+    {
+      "id": "memo_package",
+      "label": "Simulator memo package",
+      "operation": "join",
+      "deps": ["decision_memo"],
+      "params": {
+        "fields": {
+          "status": "memo_ready",
+          "memo_status": "$deps.decision_memo.status",
+          "memo": "$deps.decision_memo.latest_comment"
+        }
+      },
+      "simulate": {
+        "min_seconds": 2,
+        "max_seconds": 5
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "research_intake",
+      "to": "product_argument",
+      "label": "product branch"
+    },
+    {
+      "from": "product_argument",
+      "to": "architecture_argument",
+      "label": "architecture pass"
+    },
+    {
+      "from": "architecture_argument",
+      "to": "argument_bundle",
+      "label": "architecture input"
+    },
+    {
+      "from": "argument_bundle",
+      "to": "confidence_gate",
+      "label": "evaluate confidence"
+    },
+    {
+      "from": "confidence_gate",
+      "to": "risk_evidence",
+      "when": "visits.confidence_gate < 2",
+      "label": "needs risk evidence"
+    },
+    {
+      "from": "risk_evidence",
+      "to": "argument_bundle",
+      "label": "loop back with evidence"
+    },
+    {
+      "from": "confidence_gate",
+      "to": "decision_memo",
+      "when": "visits.confidence_gate >= 2",
+      "label": "enough confidence"
+    },
+    {
+      "from": "decision_memo",
+      "to": "memo_package",
+      "label": "package memo"
+    }
+  ]
+}

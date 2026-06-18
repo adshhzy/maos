@@ -1,0 +1,118 @@
+﻿{
+  "id": "mixed-compliance-release-agents",
+  "name": "Mixed Compliance Release Real Agents DAG",
+  "input": {
+    "release": "maos-2026.06-private-beta",
+    "targets": ["sandbox-api", "agent-service", "temporal-worker"],
+    "policy_focus": ["security review", "test evidence", "operator documentation"]
+  },
+  "nodes": [
+    {
+      "id": "release_scope",
+      "label": "Simulator release scope",
+      "operation": "emit",
+      "params": {
+        "release": "$input.release",
+        "targets": "$input.targets",
+        "policy_focus": "$input.policy_focus"
+      },
+      "simulate": {
+        "min_seconds": 4,
+        "max_seconds": 9
+      }
+    },
+    {
+      "id": "dependency_scan",
+      "label": "Simulator dependency scan",
+      "operation": "status",
+      "deps": ["release_scope"],
+      "params": {
+        "status": "passed",
+        "details": {
+          "scanner": "simulated-sca",
+          "critical_findings": 0
+        }
+      },
+      "simulate": {
+        "min_seconds": 10,
+        "max_seconds": 22
+      }
+    },
+    {
+      "id": "security_review",
+      "label": "Real security review agent",
+      "operation": "agent_task",
+      "deps": ["release_scope", "dependency_scan"],
+      "agent": {
+        "backend": "multica",
+        "agent_key": "security",
+        "context_policy": "provided_context_only",
+        "runtime_profile": "maos_compact_agent",
+        "execution_mode": "multica",
+        "status": "in_progress",
+        "priority": "high",
+        "poll_seconds": 30,
+        "prompt": "Use the release scope and dependency scan result to produce a security release review. Include authorization risks, data handling risks, dependency risk, required mitigations, and approval recommendation. Add the result as a Multica comment and move the task to in_review or done."
+      },
+      "timeout_seconds": 7200
+    },
+    {
+      "id": "test_evidence",
+      "label": "Real QA evidence agent",
+      "operation": "agent_task",
+      "deps": ["release_scope", "dependency_scan"],
+      "agent": {
+        "backend": "multica",
+        "agent_key": "qa",
+        "context_policy": "provided_context_only",
+        "runtime_profile": "maos_compact_agent",
+        "execution_mode": "multica",
+        "status": "in_progress",
+        "priority": "medium",
+        "poll_seconds": 30,
+        "prompt": "Use the release scope and dependency scan result to define release test evidence. Include smoke tests, regression checks, failure-mode tests, manual verification, and acceptance criteria. Add the result as a Multica comment and move the task to in_review or done."
+      },
+      "timeout_seconds": 7200
+    },
+    {
+      "id": "operator_docs",
+      "label": "Real documentation agent",
+      "operation": "agent_task",
+      "deps": ["security_review", "test_evidence"],
+      "agent": {
+        "backend": "multica",
+        "agent_key": "docs",
+        "context_policy": "provided_context_only",
+        "runtime_profile": "maos_compact_agent",
+        "execution_mode": "multica",
+        "status": "in_progress",
+        "priority": "medium",
+        "poll_seconds": 30,
+        "prompt": "Use the security review and test evidence to draft operator release notes. Include deployment notes, monitoring signals, rollback criteria, known limitations, and support handoff. Add the result as a Multica comment and move the task to in_review or done."
+      },
+      "timeout_seconds": 7200
+    },
+    {
+      "id": "go_no_go",
+      "label": "Simulator go/no-go package",
+      "operation": "join",
+      "deps": ["security_review", "test_evidence", "operator_docs"],
+      "params": {
+        "fields": {
+          "status": "ready_for_review",
+          "security_status": "$deps.security_review.status",
+          "security_note": "$deps.security_review.latest_comment",
+          "test_status": "$deps.test_evidence.status",
+          "test_note": "$deps.test_evidence.latest_comment",
+          "docs_status": "$deps.operator_docs.status",
+          "docs_note": "$deps.operator_docs.latest_comment"
+        }
+      },
+      "simulate": {
+        "min_seconds": 5,
+        "max_seconds": 12
+      }
+    }
+  ]
+}
+

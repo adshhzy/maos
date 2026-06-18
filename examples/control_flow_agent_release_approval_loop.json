@@ -1,0 +1,173 @@
+{
+  "id": "control-flow-agent-release-approval-loop",
+  "name": "Control-flow real Agent release approval loop",
+  "graph_type": "control_flow",
+  "max_total_visits": 16,
+  "input": {
+    "release": "MAOS control-flow graph interpreter",
+    "goal": "Prepare a gated internal release with product, QA, and documentation checks.",
+    "risk_level": "medium"
+  },
+  "start": "release_brief",
+  "nodes": [
+    {
+      "id": "release_brief",
+      "label": "Simulator release brief",
+      "operation": "emit",
+      "params": {
+        "release": "$input.release",
+        "goal": "$input.goal",
+        "risk_level": "$input.risk_level",
+        "acceptance": "Release can proceed only after readiness review passes."
+      },
+      "simulate": {
+        "min_seconds": 2,
+        "max_seconds": 5
+      }
+    },
+    {
+      "id": "product_release_plan",
+      "label": "Real product release plan",
+      "operation": "agent_task",
+      "deps": ["release_brief"],
+      "agent": {
+        "backend": "multica",
+        "agent_key": "product_strategy",
+        "context_policy": "provided_context_only",
+        "runtime_profile": "maos_compact_agent",
+        "execution_mode": "multica",
+        "status": "in_progress",
+        "priority": "medium",
+        "poll_seconds": 30,
+        "prompt": "Use only the A2A payload. Produce a product release plan with target users, staged rollout, success metrics, known risks, and explicit go/no-go criteria. Add the final result as a Multica comment and move the task to in_review or done."
+      },
+      "timeout_seconds": 7200
+    },
+    {
+      "id": "qa_readiness_review",
+      "label": "Real QA readiness review",
+      "operation": "agent_task",
+      "join": "any",
+      "max_visits": 3,
+      "deps": ["product_release_plan", "remediation_notes"],
+      "agent": {
+        "backend": "multica",
+        "agent_key": "qa",
+        "context_policy": "provided_context_only",
+        "runtime_profile": "maos_compact_agent",
+        "execution_mode": "multica",
+        "status": "in_progress",
+        "priority": "high",
+        "poll_seconds": 30,
+        "prompt": "Use only the A2A payload. Review release readiness and produce a checklist with blockers, tests, manual validation, and a pass/fail recommendation. On a second pass, incorporate remediation notes. Add the final result as a Multica comment and move the task to in_review or done."
+      },
+      "timeout_seconds": 7200
+    },
+    {
+      "id": "approval_gate",
+      "label": "Approval gate",
+      "type": "condition",
+      "operation": "condition",
+      "join": "any",
+      "max_visits": 3,
+      "params": {
+        "decision_note": "First QA review routes to remediation; second QA review approves the release."
+      }
+    },
+    {
+      "id": "remediation_notes",
+      "label": "Simulator remediation notes",
+      "operation": "status",
+      "join": "any",
+      "params": {
+        "status": "remediated",
+        "details": {
+          "fixes": [
+            "Add a manual refresh validation step",
+            "Document branch and loop visualization semantics",
+            "Prepare rollback note for old DAG-only examples"
+          ]
+        }
+      },
+      "simulate": {
+        "min_seconds": 2,
+        "max_seconds": 6
+      }
+    },
+    {
+      "id": "release_notes",
+      "label": "Real docs release notes",
+      "operation": "agent_task",
+      "join": "any",
+      "deps": ["product_release_plan", "qa_readiness_review"],
+      "agent": {
+        "backend": "multica",
+        "agent_key": "docs",
+        "context_policy": "provided_context_only",
+        "runtime_profile": "maos_compact_agent",
+        "execution_mode": "multica",
+        "status": "in_progress",
+        "priority": "medium",
+        "poll_seconds": 30,
+        "prompt": "Use only the A2A payload. Draft concise internal release notes explaining what changed, how to validate branch/loop graphs, known limitations, and rollout instructions. Add the final result as a Multica comment and move the task to in_review or done."
+      },
+      "timeout_seconds": 7200
+    },
+    {
+      "id": "release_package",
+      "label": "Simulator release package",
+      "operation": "join",
+      "deps": ["release_notes"],
+      "params": {
+        "fields": {
+          "status": "release_ready",
+          "release_note_status": "$deps.release_notes.status",
+          "release_note": "$deps.release_notes.latest_comment"
+        }
+      },
+      "simulate": {
+        "min_seconds": 2,
+        "max_seconds": 5
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "release_brief",
+      "to": "product_release_plan",
+      "label": "plan"
+    },
+    {
+      "from": "product_release_plan",
+      "to": "qa_readiness_review",
+      "label": "review"
+    },
+    {
+      "from": "qa_readiness_review",
+      "to": "approval_gate",
+      "label": "decide"
+    },
+    {
+      "from": "approval_gate",
+      "to": "remediation_notes",
+      "when": "visits.approval_gate < 2",
+      "label": "requires remediation"
+    },
+    {
+      "from": "remediation_notes",
+      "to": "qa_readiness_review",
+      "label": "recheck loop"
+    },
+    {
+      "from": "approval_gate",
+      "to": "release_notes",
+      "when": "visits.approval_gate >= 2",
+      "label": "approved"
+    },
+    {
+      "from": "release_notes",
+      "to": "release_package",
+      "label": "package"
+    }
+  ]
+}

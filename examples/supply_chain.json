@@ -1,0 +1,13 @@
+﻿{
+  "id": "supply-chain",
+  "name": "Supply chain DAG",
+  "input": {"shipment": "ship-20260610", "legs": ["factory", "port", "warehouse"]},
+  "nodes": [
+    {"id": "create_shipment", "label": "Create shipment", "operation": "emit", "simulate": {"min_seconds": 7, "max_seconds": 14}, "params": {"shipment": "$input.shipment", "legs": "$input.legs"}},
+    {"id": "book_factory_pickup", "label": "Factory pickup", "operation": "status", "deps": ["create_shipment"], "simulate": {"min_seconds": 14, "max_seconds": 28}, "params": {"status": "booked", "details": {"leg": "factory"}}},
+    {"id": "book_ocean_freight", "label": "Ocean freight", "operation": "status", "deps": ["book_factory_pickup"], "simulate": {"min_seconds": 22, "max_seconds": 50}, "params": {"status": "booked", "details": {"leg": "port"}}},
+    {"id": "book_warehouse", "label": "Warehouse slot", "operation": "status", "deps": ["create_shipment"], "simulate": {"min_seconds": 12, "max_seconds": 26}, "params": {"status": "reserved", "details": {"leg": "warehouse"}}},
+    {"id": "confirm_route", "label": "Confirm route", "operation": "join", "deps": ["book_ocean_freight", "book_warehouse"], "simulate": {"min_seconds": 10, "max_seconds": 22}, "params": {"fields": {"status": "confirmed", "freight": "$deps.book_ocean_freight.status", "warehouse": "$deps.book_warehouse.status"}}}
+  ]
+}
+

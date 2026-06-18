@@ -1,0 +1,177 @@
+{
+  "id": "control-flow-chinese-real-agent-review-loop",
+  "name": "中文控制流真实Agent评审循环",
+  "graph_type": "control_flow",
+  "max_total_visits": 16,
+  "input": {
+    "项目": "企业多Agent任务编排平台",
+    "目标": "设计一个能支持长时间等待、人机协作和大规模并发的持久化执行层",
+    "约束": [
+      "工作实际执行由单Agent完成，编排层只负责调度",
+      "节点间数据传递使用A2A形态",
+      "Web看板不需要高频刷新，但需要清楚展示分支和循环"
+    ]
+  },
+  "start": "需求快照",
+  "nodes": [
+    {
+      "id": "需求快照",
+      "label": "Simulator 需求快照",
+      "operation": "emit",
+      "params": {
+        "项目": "$input.项目",
+        "目标": "$input.目标",
+        "约束": "$input.约束",
+        "输出要求": "为后续真实Agent生成一个清晰、压缩的上下文。"
+      },
+      "simulate": {
+        "min_seconds": 2,
+        "max_seconds": 5
+      }
+    },
+    {
+      "id": "产品方案",
+      "label": "真实Agent 产品方案",
+      "operation": "agent_task",
+      "deps": ["需求快照"],
+      "agent": {
+        "backend": "multica",
+        "agent_key": "product_strategy",
+        "context_policy": "provided_context_only",
+        "runtime_profile": "maos_compact_agent",
+        "execution_mode": "multica",
+        "status": "in_progress",
+        "priority": "medium",
+        "poll_seconds": 30,
+        "prompt": "请只基于A2A payload，输出中文产品方案。内容包括目标用户、核心价值、关键场景、成功指标、风险和分阶段落地计划。完成后把最终结果作为Multica评论提交，并将任务状态更新为in_review或done。"
+      },
+      "timeout_seconds": 7200
+    },
+    {
+      "id": "架构评审",
+      "label": "真实Agent 架构评审",
+      "operation": "agent_task",
+      "join": "any",
+      "max_visits": 3,
+      "deps": ["产品方案", "补充约束"],
+      "agent": {
+        "backend": "multica",
+        "agent_key": "architect",
+        "context_policy": "provided_context_only",
+        "runtime_profile": "maos_compact_agent",
+        "execution_mode": "multica",
+        "status": "in_progress",
+        "priority": "high",
+        "poll_seconds": 30,
+        "prompt": "请只基于A2A payload，输出中文架构评审。内容包括Temporal工作流边界、A2A数据传递、Agent长等待、人工回路、失败恢复、可观测性和扩展风险。第二轮如有补充约束，请合并考虑。完成后把最终结果作为Multica评论提交，并将任务状态更新为in_review或done。"
+      },
+      "timeout_seconds": 7200
+    },
+    {
+      "id": "评审门",
+      "label": "评审分支门",
+      "type": "condition",
+      "operation": "condition",
+      "join": "any",
+      "max_visits": 3,
+      "params": {
+        "说明": "第一轮要求补充约束并回到架构评审；第二轮进入文档汇总。"
+      }
+    },
+    {
+      "id": "补充约束",
+      "label": "Simulator 补充约束",
+      "operation": "status",
+      "join": "any",
+      "params": {
+        "status": "已补充",
+        "details": {
+          "新增约束": [
+            "循环必须有max_visits或max_total_visits保护",
+            "分支边需要在Web界面显式区分",
+            "真实Agent输出必须作为下游A2A上下文传递"
+          ]
+        }
+      },
+      "simulate": {
+        "min_seconds": 2,
+        "max_seconds": 6
+      }
+    },
+    {
+      "id": "中文说明文档",
+      "label": "真实Agent 中文说明文档",
+      "operation": "agent_task",
+      "join": "any",
+      "deps": ["产品方案", "架构评审"],
+      "agent": {
+        "backend": "multica",
+        "agent_key": "docs",
+        "context_policy": "provided_context_only",
+        "runtime_profile": "maos_compact_agent",
+        "execution_mode": "multica",
+        "status": "in_progress",
+        "priority": "medium",
+        "poll_seconds": 30,
+        "prompt": "请只基于A2A payload，编写中文说明文档草案，解释这个持久化多Agent编排内核的目标、控制流图JSON、分支/循环执行语义、Temporal挂起机制、A2A数据传递和Web可视化。完成后把最终结果作为Multica评论提交，并将任务状态更新为in_review或done。"
+      },
+      "timeout_seconds": 7200
+    },
+    {
+      "id": "最终汇总",
+      "label": "Simulator 最终汇总",
+      "operation": "join",
+      "deps": ["中文说明文档"],
+      "params": {
+        "fields": {
+          "status": "已汇总",
+          "文档状态": "$deps.中文说明文档.status",
+          "文档输出": "$deps.中文说明文档.latest_comment"
+        }
+      },
+      "simulate": {
+        "min_seconds": 2,
+        "max_seconds": 5
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "需求快照",
+      "to": "产品方案",
+      "label": "产品分析"
+    },
+    {
+      "from": "产品方案",
+      "to": "架构评审",
+      "label": "架构评审"
+    },
+    {
+      "from": "架构评审",
+      "to": "评审门",
+      "label": "进入判断"
+    },
+    {
+      "from": "评审门",
+      "to": "补充约束",
+      "when": "visits.评审门 < 2",
+      "label": "需要补充"
+    },
+    {
+      "from": "补充约束",
+      "to": "架构评审",
+      "label": "带补充约束回环"
+    },
+    {
+      "from": "评审门",
+      "to": "中文说明文档",
+      "when": "visits.评审门 >= 2",
+      "label": "评审通过"
+    },
+    {
+      "from": "中文说明文档",
+      "to": "最终汇总",
+      "label": "汇总"
+    }
+  ]
+}

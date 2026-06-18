@@ -1,0 +1,14 @@
+﻿{
+  "id": "ml-training",
+  "name": "ML training DAG",
+  "input": {"model": "ranking-v4", "features": ["clicks", "views", "orders", "returns"]},
+  "nodes": [
+    {"id": "load_features", "label": "Load features", "operation": "emit", "simulate": {"min_seconds": 10, "max_seconds": 24}, "params": {"model": "$input.model", "features": "$input.features"}},
+    {"id": "count_features", "label": "Count features", "operation": "count", "deps": ["load_features"], "simulate": {"min_seconds": 6, "max_seconds": 12}, "params": {"values": "$deps.load_features.features"}},
+    {"id": "train_baseline", "label": "Train baseline", "operation": "status", "deps": ["load_features"], "simulate": {"min_seconds": 24, "max_seconds": 55}, "params": {"status": "trained", "details": {"variant": "baseline"}}},
+    {"id": "train_candidate", "label": "Train candidate", "operation": "status", "deps": ["load_features"], "simulate": {"min_seconds": 32, "max_seconds": 68}, "params": {"status": "trained", "details": {"variant": "candidate"}}},
+    {"id": "evaluate", "label": "Evaluate models", "operation": "join", "deps": ["count_features", "train_baseline", "train_candidate"], "simulate": {"min_seconds": 15, "max_seconds": 35}, "params": {"fields": {"decision": "candidate", "feature_count": "$deps.count_features.count", "baseline": "$deps.train_baseline.status", "candidate": "$deps.train_candidate.status"}}},
+    {"id": "register_model", "label": "Register model", "operation": "template", "deps": ["evaluate"], "simulate": {"min_seconds": 8, "max_seconds": 18}, "params": {"fields": {"status": "registered", "artifact": "model-${input_model}"}}}
+  ]
+}
+

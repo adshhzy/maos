@@ -1,0 +1,130 @@
+﻿{
+  "id": "order-processing",
+  "name": "Order processing DAG",
+  "input": {
+    "order_id": "order-20260610-001",
+    "customer_id": "customer-maos",
+    "items": ["gpu", "ssd", "keyboard", "monitor"]
+  },
+  "nodes": [
+    {
+      "id": "load_order",
+      "label": "Load order",
+      "operation": "emit",
+      "params": {
+        "order_id": "$input.order_id",
+        "customer_id": "$input.customer_id",
+        "items": "$input.items"
+      }
+    },
+    {
+      "id": "count_items",
+      "label": "Count items",
+      "operation": "count",
+      "deps": ["load_order"],
+      "params": {
+        "values": "$deps.load_order.items"
+      }
+    },
+    {
+      "id": "validate_customer",
+      "label": "Validate customer",
+      "operation": "status",
+      "deps": ["load_order"],
+      "params": {
+        "status": "verified",
+        "details": {
+          "customer_id": "$deps.load_order.customer_id"
+        }
+      }
+    },
+    {
+      "id": "reserve_inventory",
+      "label": "Reserve inventory",
+      "operation": "template",
+      "deps": ["load_order"],
+      "params": {
+        "fields": {
+          "order_id": "${deps_load_order_order_id}",
+          "reservation_id": "res-${deps_load_order_order_id}"
+        }
+      }
+    },
+    {
+      "id": "calculate_discount",
+      "label": "Calculate discount",
+      "operation": "percentage_from_count",
+      "deps": ["count_items"],
+      "params": {
+        "count": "$deps.count_items.count",
+        "multiplier": 3,
+        "cap": 20
+      }
+    },
+    {
+      "id": "fraud_check",
+      "label": "Fraud check",
+      "operation": "join",
+      "deps": ["validate_customer", "calculate_discount"],
+      "params": {
+        "fields": {
+          "status": "approved",
+          "risk": "low",
+          "customer_status": "$deps.validate_customer.status",
+          "discount_percent": "$deps.calculate_discount.percent"
+        }
+      }
+    },
+    {
+      "id": "charge_payment",
+      "label": "Charge payment",
+      "operation": "join",
+      "deps": ["reserve_inventory", "fraud_check"],
+      "params": {
+        "fields": {
+          "payment_status": "captured",
+          "risk": "$deps.fraud_check.risk",
+          "reservation_id": "$deps.reserve_inventory.reservation_id"
+        }
+      }
+    },
+    {
+      "id": "arrange_shipping",
+      "label": "Arrange shipping",
+      "operation": "template",
+      "deps": ["charge_payment"],
+      "params": {
+        "fields": {
+          "payment_status": "${deps_charge_payment_payment_status}",
+          "tracking_number": "TRK-20260610-MAOS"
+        }
+      }
+    },
+    {
+      "id": "send_notification",
+      "label": "Send notification",
+      "operation": "join",
+      "deps": ["charge_payment"],
+      "params": {
+        "fields": {
+          "payment_status": "$deps.charge_payment.payment_status",
+          "channel": "email"
+        }
+      }
+    },
+    {
+      "id": "close_order",
+      "label": "Close order",
+      "operation": "join",
+      "deps": ["arrange_shipping", "send_notification"],
+      "params": {
+        "fields": {
+          "order_status": "closed",
+          "tracking_number": "$deps.arrange_shipping.tracking_number",
+          "notification_channel": "$deps.send_notification.channel"
+        }
+      }
+    }
+  ]
+}
+

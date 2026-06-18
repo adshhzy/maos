@@ -1,0 +1,394 @@
+{
+  "id": "maos-advanced-control-flow",
+  "name": "MAOS Advanced Control-Flow with Mixed Backends",
+  "graph_type": "control_flow",
+  "max_total_visits": 20,
+  "input": {
+    "task_id": "maos-adv-20240617-001",
+    "project_name": "Multi-Agent Orchestration System",
+    "description": "Design and implement an advanced control-flow system with mixed agent backends",
+    "priority": "high",
+    "budget_hours": 40
+  },
+  "start": "project_initiation",
+  "nodes": [
+    {
+      "id": "project_initiation",
+      "label": "Project initiation",
+      "operation": "emit",
+      "params": {
+        "task_id": "$input.task_id",
+        "project_name": "$input.project_name",
+        "description": "$input.description",
+        "priority": "$input.priority",
+        "budget_hours": "$input.budget_hours",
+        "status": "initiated"
+      },
+      "simulate": {
+        "min_seconds": 1,
+        "max_seconds": 3
+      }
+    },
+    {
+      "id": "requirements_analysis",
+      "label": "Requirements analysis (Hermes)",
+      "operation": "agent_task",
+      "deps": ["project_initiation"],
+      "agent": {
+        "backend": "hermes",
+        "agent_key": "analyst",
+        "context_policy": "provided_context_only",
+        "runtime_profile": "hermes_oneshot",
+        "execution_mode": "hermes_oneshot",
+        "poll_seconds": 30,
+        "prompt": "Analyze the project requirements for the MAOS control-flow system. Identify key features needed: conditional branching, loops, parallel execution, mixed backends (simulator/hermes/multica), and visualization. Output JSON with fields: requirements_list, complexity_rating (1-10), estimated_effort_hours, and risks."
+      },
+      "timeout_seconds": 600
+    },
+    {
+      "id": "architecture_design",
+      "label": "Architecture design (Multica)",
+      "operation": "agent_task",
+      "deps": ["requirements_analysis"],
+      "agent": {
+        "backend": "multica",
+        "agent_key": "architect",
+        "context_policy": "provided_context_only",
+        "runtime_profile": "maos_compact_agent",
+        "execution_mode": "multica",
+        "status": "in_progress",
+        "priority": "high",
+        "poll_seconds": 30,
+        "prompt": "Design the architecture for MAOS advanced control-flow system based on requirements analysis. Consider: 1) Temporal workflow integration, 2) A2A data transfer between nodes, 3) Mixed backend support (simulator/hermes/multica), 4) Conditional branching logic, 5) Loop handling with max_visits. Output JSON with fields: design_summary, components, data_flow, and integration_points. After completing, add result as Multica comment and update task status to in_review."
+      },
+      "timeout_seconds": 7200
+    },
+    {
+      "id": "design_review_gate",
+      "label": "Design review gate",
+      "type": "condition",
+      "operation": "condition",
+      "deps": ["architecture_design"],
+      "params": {
+        "message": "Review architectural design for approval"
+      }
+    },
+    {
+      "id": "core_implementation",
+      "label": "Core implementation (Hermes)",
+      "operation": "agent_task",
+      "join": "any",
+      "max_visits": 3,
+      "deps": ["requirements_analysis", "design_review_gate"],
+      "agent": {
+        "backend": "hermes",
+        "agent_key": "developer",
+        "context_policy": "provided_context_only",
+        "runtime_profile": "hermes_oneshot",
+        "execution_mode": "hermes_oneshot",
+        "poll_seconds": 30,
+        "prompt": "Implement core control-flow logic based on architecture design and requirements. If design_review_gate indicates needs_revision, incorporate feedback. Focus on: 1) Node execution engine, 2) Dependency resolution, 3) Conditional edge evaluation, 4) Loop detection and bounding. Output JSON with fields: implementation_status, files_created, tests_written, issues_found."
+      },
+      "timeout_seconds": 900
+    },
+    {
+      "id": "backend_integration",
+      "label": "Backend integration (Multica)",
+      "operation": "agent_task",
+      "deps": ["architecture_design"],
+      "agent": {
+        "backend": "multica",
+        "agent_key": "devops",
+        "context_policy": "provided_context_only",
+        "runtime_profile": "maos_compact_agent",
+        "execution_mode": "multica",
+        "status": "in_progress",
+        "priority": "medium",
+        "poll_seconds": 30,
+        "prompt": "Implement backend integration for mixed agent support. Integrate: 1) Simulator backend for testing, 2) Hermes direct execution, 3) Multica Agent Service facade. Handle A2A data transfer between different backends. Output JSON with fields: integration_status, apis_implemented, configuration_required, and testing_coverage. After completing, add result as Multica comment and update task status to in_review."
+      },
+      "timeout_seconds": 7200
+    },
+    {
+      "id": "ui_visualization",
+      "label": "UI visualization (Hermes)",
+      "operation": "agent_task",
+      "deps": ["architecture_design"],
+      "agent": {
+        "backend": "hermes",
+        "agent_key": "frontend",
+        "context_policy": "provided_context_only",
+        "runtime_profile": "hermes_oneshot",
+        "execution_mode": "hermes_oneshot",
+        "poll_seconds": 30,
+        "prompt": "Implement visualization for control-flow execution state. Features needed: 1) Real-time graph updates, 2) Node status coloring, 3) Execution history, 4) Conditional edge highlighting. Output JSON with fields: visualization_type, features_implemented, integration_method, and ui_components."
+      },
+      "timeout_seconds": 600
+    },
+    {
+      "id": "integration_test",
+      "label": "Integration testing",
+      "operation": "join",
+      "join": "all",
+      "deps": ["core_implementation", "backend_integration", "ui_visualization"],
+      "params": {
+        "fields": {
+          "status": "testing",
+          "test_scope": "End-to-end integration testing of all components",
+          "core_status": "$deps.core_implementation.implementation_status",
+          "backend_status": "$deps.backend_integration.integration_status",
+          "ui_status": "$deps.ui_visualization.visualization_type",
+          "test_cases": ["conditional_branching", "loop_execution", "mixed_backends", "parallel_nodes", "error_handling"]
+        }
+      },
+      "simulate": {
+        "min_seconds": 3,
+        "max_seconds": 8
+      }
+    },
+    {
+      "id": "security_review",
+      "label": "Security review (Multica)",
+      "operation": "agent_task",
+      "deps": ["integration_test"],
+      "agent": {
+        "backend": "multica",
+        "agent_key": "security",
+        "context_policy": "provided_context_only",
+        "runtime_profile": "maos_compact_agent",
+        "execution_mode": "multica",
+        "status": "in_progress",
+        "priority": "high",
+        "poll_seconds": 30,
+        "prompt": "Conduct security review of the MAOS control-flow system. Check: 1) Data isolation between agents, 2) Authentication/authorization, 3) Input validation, 4) Error handling security implications. Output JSON with fields: security_assessment, vulnerabilities_found, recommendations, and risk_level (low/medium/high). After completing, add result as Multica comment and update task status to done."
+      },
+      "timeout_seconds": 7200
+    },
+    {
+      "id": "performance_test",
+      "label": "Performance testing",
+      "operation": "agent_task",
+      "deps": ["integration_test"],
+      "agent": {
+        "backend": "hermes",
+        "agent_key": "qa",
+        "context_policy": "provided_context_only",
+        "runtime_profile": "hermes_oneshot",
+        "execution_mode": "hermes_oneshot",
+        "poll_seconds": 30,
+        "prompt": "Perform performance testing on the control-flow system. Test: 1) Concurrent workflow execution, 2) Node execution latency, 3) Memory usage under load, 4) Scalability. Output JSON with fields: performance_metrics, bottlenecks_identified, recommendations, and scalability_rating (1-10)."
+      },
+      "timeout_seconds": 600
+    },
+    {
+      "id": "quality_gate",
+      "label": "Quality gate",
+      "type": "condition",
+      "operation": "condition",
+      "join": "all",
+      "deps": ["security_review", "performance_test"],
+      "params": {
+        "message": "Quality gate review based on security and performance results"
+      }
+    },
+    {
+      "id": "documentation",
+      "label": "Documentation",
+      "operation": "agent_task",
+      "deps": ["quality_gate"],
+      "agent": {
+        "backend": "hermes",
+        "agent_key": "docs",
+        "context_policy": "provided_context_only",
+        "runtime_profile": "hermes_oneshot",
+        "execution_mode": "hermes_oneshot",
+        "poll_seconds": 30,
+        "prompt": "Create comprehensive documentation for the MAOS control-flow system. Include: 1) Architecture overview, 2) JSON format specification, 3) API documentation, 4) Usage examples, 5) Troubleshooting guide. Output JSON with fields: documentation_status, sections_completed, examples_included, and review_needed."
+      },
+      "timeout_seconds": 600
+    },
+    {
+      "id": "deployment_prep",
+      "label": "Deployment preparation",
+      "operation": "join",
+      "deps": ["quality_gate"],
+      "params": {
+        "fields": {
+          "status": "ready_for_deployment",
+          "deployment_checklist": [
+            "Code review completed",
+            "Tests passed",
+            "Security review approved",
+            "Performance targets met",
+            "Documentation ready"
+          ],
+          "deployment_plan": "Roll out in stages: 1) Internal testing, 2) Limited pilot, 3) Full production",
+          "rollback_procedure": "Revert to previous version if issues detected"
+        }
+      },
+      "simulate": {
+        "min_seconds": 2,
+        "max_seconds": 5
+      }
+    },
+    {
+      "id": "final_approval",
+      "label": "Final approval",
+      "operation": "status",
+      "deps": ["documentation", "deployment_prep"],
+      "params": {
+        "status": "approved",
+        "details": {
+          "message": "MAOS advanced control-flow system ready for deployment",
+          "components_completed": 6,
+          "total_effort_hours": "$input.budget_hours",
+          "next_phase": "Production deployment and monitoring"
+        }
+      },
+      "simulate": {
+        "min_seconds": 1,
+        "max_seconds": 3
+      }
+    },
+    {
+      "id": "revision_loop",
+      "label": "Revision needed",
+      "operation": "status",
+      "join": "any",
+      "max_visits": 2,
+      "deps": ["quality_gate"],
+      "params": {
+        "status": "revision_required",
+        "details": {
+          "reason": "Quality gate failed - addressing issues",
+          "action_items": [
+            "Fix security vulnerabilities",
+            "Address performance bottlenecks",
+            "Update implementation based on feedback"
+          ]
+        }
+      },
+      "simulate": {
+        "min_seconds": 2,
+        "max_seconds": 4
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "project_initiation",
+      "to": "requirements_analysis",
+      "label": "start requirements"
+    },
+    {
+      "from": "requirements_analysis",
+      "to": "architecture_design",
+      "label": "proceed to design"
+    },
+    {
+      "from": "architecture_design",
+      "to": "design_review_gate",
+      "label": "submit for design review"
+    },
+    {
+      "from": "design_review_gate",
+      "to": "core_implementation",
+      "when": "visits.design_review_gate < 2",
+      "label": "design approved, implement core"
+    },
+    {
+      "from": "design_review_gate",
+      "to": "architecture_design",
+      "when": "visits.design_review_gate >= 2",
+      "label": "design needs revision"
+    },
+    {
+      "from": "architecture_design",
+      "to": "backend_integration",
+      "label": "start backend integration"
+    },
+    {
+      "from": "architecture_design",
+      "to": "ui_visualization",
+      "label": "start UI visualization"
+    },
+    {
+      "from": "core_implementation",
+      "to": "integration_test",
+      "label": "ready for integration"
+    },
+    {
+      "from": "backend_integration",
+      "to": "integration_test",
+      "label": "ready for integration"
+    },
+    {
+      "from": "ui_visualization",
+      "to": "integration_test",
+      "label": "ready for integration"
+    },
+    {
+      "from": "integration_test",
+      "to": "security_review",
+      "label": "security review"
+    },
+    {
+      "from": "integration_test",
+      "to": "performance_test",
+      "label": "performance testing"
+    },
+    {
+      "from": "security_review",
+      "to": "quality_gate",
+      "label": "security results"
+    },
+    {
+      "from": "performance_test",
+      "to": "quality_gate",
+      "label": "performance results"
+    },
+    {
+      "from": "quality_gate",
+      "to": "documentation",
+      "when": "visits.quality_gate < 2",
+      "label": "quality passed, start docs"
+    },
+    {
+      "from": "quality_gate",
+      "to": "deployment_prep",
+      "when": "visits.quality_gate < 2",
+      "label": "quality passed, prep deployment"
+    },
+    {
+      "from": "quality_gate",
+      "to": "revision_loop",
+      "when": "visits.quality_gate >= 2",
+      "label": "quality failed, needs revision"
+    },
+    {
+      "from": "revision_loop",
+      "to": "core_implementation",
+      "label": "revise implementation"
+    },
+    {
+      "from": "revision_loop",
+      "to": "backend_integration",
+      "label": "revise backend"
+    },
+    {
+      "from": "revision_loop",
+      "to": "ui_visualization",
+      "label": "revise UI"
+    },
+    {
+      "from": "documentation",
+      "to": "final_approval",
+      "label": "docs complete"
+    },
+    {
+      "from": "deployment_prep",
+      "to": "final_approval",
+      "label": "deployment ready"
+    }
+  ]
+}

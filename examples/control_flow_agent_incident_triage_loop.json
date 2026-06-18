@@ -1,0 +1,160 @@
+{
+  "id": "control-flow-agent-incident-triage-loop",
+  "name": "Control-flow real Agent incident triage loop",
+  "graph_type": "control_flow",
+  "max_total_visits": 14,
+  "input": {
+    "incident_id": "INC-20260616-001",
+    "system": "Multi-agent orchestration API",
+    "symptoms": [
+      "Agent callback latency increased",
+      "Some tasks remain suspended longer than expected",
+      "Dashboard refresh interval is intentionally slow"
+    ],
+    "severity": "high"
+  },
+  "start": "incident_snapshot",
+  "nodes": [
+    {
+      "id": "incident_snapshot",
+      "label": "Simulator incident snapshot",
+      "operation": "emit",
+      "params": {
+        "incident_id": "$input.incident_id",
+        "system": "$input.system",
+        "symptoms": "$input.symptoms",
+        "severity": "$input.severity",
+        "goal": "Classify probable cause and propose a safe response path."
+      },
+      "simulate": {
+        "min_seconds": 2,
+        "max_seconds": 5
+      }
+    },
+    {
+      "id": "architecture_diagnosis",
+      "label": "Real architect diagnosis",
+      "operation": "agent_task",
+      "join": "any",
+      "max_visits": 3,
+      "deps": ["incident_snapshot", "extra_observations"],
+      "agent": {
+        "backend": "multica",
+        "agent_key": "architect",
+        "context_policy": "provided_context_only",
+        "runtime_profile": "maos_compact_agent",
+        "execution_mode": "multica",
+        "status": "in_progress",
+        "priority": "high",
+        "poll_seconds": 30,
+        "prompt": "Use only the A2A payload. Diagnose the incident from an architecture and orchestration perspective. Include likely causes, missing evidence, mitigation sequence, and which signals should be monitored. Add the final result as a Multica comment and move the task to in_review or done."
+      },
+      "timeout_seconds": 7200
+    },
+    {
+      "id": "triage_gate",
+      "label": "Triage decision gate",
+      "type": "condition",
+      "operation": "condition",
+      "join": "any",
+      "max_visits": 3,
+      "params": {
+        "decision_note": "First diagnosis requests more observations; second diagnosis can proceed to action."
+      }
+    },
+    {
+      "id": "extra_observations",
+      "label": "Simulator collect observations",
+      "operation": "status",
+      "join": "any",
+      "params": {
+        "status": "more_evidence_collected",
+        "details": {
+          "new_signals": [
+            "AgentService task reached in_review",
+            "Temporal workflow was durably polling",
+            "No worker thread was held during long wait"
+          ],
+          "message": "Additional observations are ready for the second diagnosis pass."
+        }
+      },
+      "simulate": {
+        "min_seconds": 2,
+        "max_seconds": 6
+      }
+    },
+    {
+      "id": "ops_response_plan",
+      "label": "Real DevOps response plan",
+      "operation": "agent_task",
+      "join": "any",
+      "deps": ["architecture_diagnosis", "extra_observations"],
+      "agent": {
+        "backend": "multica",
+        "agent_key": "devops",
+        "context_policy": "provided_context_only",
+        "runtime_profile": "maos_compact_agent",
+        "execution_mode": "multica",
+        "status": "in_progress",
+        "priority": "high",
+        "poll_seconds": 30,
+        "prompt": "Use only the A2A payload. Produce an operational response plan with immediate mitigation, validation commands, rollback criteria, owner handoffs, and follow-up checks. Add the final result as a Multica comment and move the task to in_review or done."
+      },
+      "timeout_seconds": 7200
+    },
+    {
+      "id": "incident_closeout",
+      "label": "Simulator closeout package",
+      "operation": "join",
+      "deps": ["incident_snapshot", "architecture_diagnosis", "ops_response_plan"],
+      "params": {
+        "fields": {
+          "status": "packaged",
+          "incident_id": "$deps.incident_snapshot.incident_id",
+          "architecture_status": "$deps.architecture_diagnosis.status",
+          "architecture_note": "$deps.architecture_diagnosis.latest_comment",
+          "ops_status": "$deps.ops_response_plan.status",
+          "ops_note": "$deps.ops_response_plan.latest_comment"
+        }
+      },
+      "simulate": {
+        "min_seconds": 2,
+        "max_seconds": 5
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "incident_snapshot",
+      "to": "architecture_diagnosis",
+      "label": "initial diagnosis"
+    },
+    {
+      "from": "architecture_diagnosis",
+      "to": "triage_gate",
+      "label": "review diagnosis"
+    },
+    {
+      "from": "triage_gate",
+      "to": "extra_observations",
+      "when": "visits.triage_gate < 2",
+      "label": "need more evidence"
+    },
+    {
+      "from": "extra_observations",
+      "to": "architecture_diagnosis",
+      "label": "loop with added evidence"
+    },
+    {
+      "from": "triage_gate",
+      "to": "ops_response_plan",
+      "when": "visits.triage_gate >= 2",
+      "label": "diagnosis accepted"
+    },
+    {
+      "from": "ops_response_plan",
+      "to": "incident_closeout",
+      "label": "package response"
+    }
+  ]
+}

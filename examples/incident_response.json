@@ -1,0 +1,14 @@
+﻿{
+  "id": "incident-response",
+  "name": "Incident response DAG",
+  "input": {"incident_id": "inc-20260610-07", "services": ["api", "checkout", "search"]},
+  "nodes": [
+    {"id": "open_incident", "label": "Open incident", "operation": "emit", "simulate": {"min_seconds": 6, "max_seconds": 12}, "params": {"incident_id": "$input.incident_id", "services": "$input.services"}},
+    {"id": "collect_logs", "label": "Collect logs", "operation": "status", "deps": ["open_incident"], "simulate": {"min_seconds": 18, "max_seconds": 36}, "params": {"status": "collected", "details": {"kind": "logs"}}},
+    {"id": "collect_metrics", "label": "Collect metrics", "operation": "status", "deps": ["open_incident"], "simulate": {"min_seconds": 16, "max_seconds": 34}, "params": {"status": "collected", "details": {"kind": "metrics"}}},
+    {"id": "notify_oncall", "label": "Notify on-call", "operation": "status", "deps": ["open_incident"], "simulate": {"min_seconds": 8, "max_seconds": 20}, "params": {"status": "notified", "details": {"channel": "pager"}}},
+    {"id": "triage", "label": "Triage", "operation": "join", "deps": ["collect_logs", "collect_metrics", "notify_oncall"], "simulate": {"min_seconds": 20, "max_seconds": 45}, "params": {"fields": {"decision": "mitigate", "logs": "$deps.collect_logs.status", "metrics": "$deps.collect_metrics.status"}}},
+    {"id": "resolve", "label": "Resolve", "operation": "status", "deps": ["triage"], "simulate": {"min_seconds": 12, "max_seconds": 28}, "params": {"status": "resolved", "details": {"resolution": "rollback"}}}
+  ]
+}
+

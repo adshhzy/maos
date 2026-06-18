@@ -1,0 +1,252 @@
+{
+  "id": "all-hermes-control-flow-branch-loop-knowledge-release",
+  "name": "全 Hermes 中文任务图 - 知识库助手上线评审循环",
+  "graph_type": "control_flow",
+  "max_total_visits": 18,
+  "input": {
+    "project": "企业内部知识库助手",
+    "goal": "为客服、销售和实施团队提供可信的中文问答与资料检索能力",
+    "launch_scope": "首期试点上线，覆盖中文问答、知识来源引用、人工兜底和基础审计",
+    "target_users": [
+      "一线客服",
+      "售前顾问",
+      "实施交付经理",
+      "客户成功经理"
+    ],
+    "constraints": [
+      "不得泄露客户隐私和合同敏感信息",
+      "回答必须能追溯到知识库来源",
+      "上线前需要有回滚方案和人工兜底流程",
+      "首期只支持中文问答",
+      "上线方案必须包含灰度发布、监控指标和安全审计"
+    ]
+  },
+  "start": "task_intake",
+  "nodes": [
+    {
+      "id": "task_intake",
+      "label": "任务理解",
+      "operation": "agent_task",
+      "agent": {
+        "backend": "hermes",
+        "agent_key": "business_analyst",
+        "context_policy": "provided_context_only",
+        "runtime_profile": "hermes_oneshot",
+        "execution_mode": "hermes_oneshot",
+        "poll_seconds": 10,
+        "timeout_seconds": 900,
+        "prompt_payload_limit": 8000,
+        "prompt": "请只基于输入，用中文完成“企业内部知识库助手首期试点上线”的任务理解。输出必须是合法 JSON 对象，不要 markdown。字段包含：项目摘要、业务目标、关键约束、验收重点、合理假设。所有字段值都必须使用中文。"
+      },
+      "timeout_seconds": 1200
+    },
+    {
+      "id": "release_plan",
+      "label": "上线方案设计",
+      "operation": "agent_task",
+      "join": "any",
+      "max_visits": 3,
+      "deps": [
+        "task_intake",
+        "quality_gate"
+      ],
+      "agent": {
+        "backend": "hermes",
+        "agent_key": "release_planner",
+        "context_policy": "provided_context_only",
+        "runtime_profile": "hermes_oneshot",
+        "execution_mode": "hermes_oneshot",
+        "poll_seconds": 10,
+        "timeout_seconds": 900,
+        "prompt_payload_limit": 10000,
+        "prompt": "请作为发布规划角色，基于输入和上游结果生成“企业内部知识库助手首期试点上线方案”。若上游质量评审门存在 decision=needs_revision，请逐条吸收其“必须修改项”后重新生成方案。输出必须是合法 JSON 对象，不要 markdown。字段包含：上线策略、上线阶段、灰度发布计划、回滚方案、人工兜底流程、监控指标、审计方案、已知风险、已吸收的修改项。所有字段值都必须使用中文。"
+      },
+      "timeout_seconds": 1200
+    },
+    {
+      "id": "security_plan",
+      "label": "安全控制方案",
+      "operation": "agent_task",
+      "join": "any",
+      "max_visits": 3,
+      "deps": [
+        "task_intake",
+        "quality_gate"
+      ],
+      "agent": {
+        "backend": "hermes",
+        "agent_key": "security_reviewer",
+        "context_policy": "provided_context_only",
+        "runtime_profile": "hermes_oneshot",
+        "execution_mode": "hermes_oneshot",
+        "poll_seconds": 10,
+        "timeout_seconds": 900,
+        "prompt_payload_limit": 9000,
+        "prompt": "请作为安全控制角色，基于输入约束输出“知识库助手上线前安全控制方案”。若上游质量评审门存在 decision=needs_revision，请逐条吸收其 required_changes 后重新生成方案。输出必须是合法 JSON 对象，不要 markdown。字段包含：风险等级、隐私保护措施、权限模型、审计要求、敏感数据控制、上线阻断项、已吸收的修改项。所有字段值都必须使用中文。"
+      },
+      "timeout_seconds": 1200
+    },
+    {
+      "id": "ux_plan",
+      "label": "使用体验方案",
+      "operation": "agent_task",
+      "join": "any",
+      "max_visits": 3,
+      "deps": [
+        "task_intake",
+        "quality_gate"
+      ],
+      "agent": {
+        "backend": "hermes",
+        "agent_key": "ux_designer",
+        "context_policy": "provided_context_only",
+        "runtime_profile": "hermes_oneshot",
+        "execution_mode": "hermes_oneshot",
+        "poll_seconds": 10,
+        "timeout_seconds": 900,
+        "prompt_payload_limit": 9000,
+        "prompt": "请作为产品体验角色，设计“首期知识库助手”的用户使用流程。若上游质量评审门存在 decision=needs_revision，请逐条吸收其 required_changes 后重新生成方案。输出必须是合法 JSON 对象，不要 markdown。字段包含：主要使用流程、引用展示方式、低置信度兜底、用户反馈闭环、人工转接流程、体验验收标准、已吸收的修改项。所有字段值都必须使用中文。"
+      },
+      "timeout_seconds": 1200
+    },
+    {
+      "id": "quality_gate",
+      "label": "Hermes 质量评审门",
+      "operation": "agent_task",
+      "join": "all",
+      "max_visits": 3,
+      "deps": [
+        "release_plan",
+        "security_plan",
+        "ux_plan"
+      ],
+      "agent": {
+        "backend": "hermes",
+        "agent_key": "quality_reviewer",
+        "context_policy": "provided_context_only",
+        "runtime_profile": "hermes_oneshot",
+        "execution_mode": "hermes_oneshot",
+        "poll_seconds": 10,
+        "timeout_seconds": 900,
+        "prompt_payload_limit": 12000,
+        "prompt": "你是质量评审门。请只基于 A2A 输入和上游结果，判断“上线方案设计、安全控制方案、使用体验方案”是否足以进入试点上线。评审标准：必须包含灰度发布、回滚方案、人工兜底、监控指标、权限隔离、隐私保护、审计日志、引用溯源、低置信度处理。输出必须是一个合法 JSON 对象，不要 markdown。字段必须包含：decision、reason、required_changes、confidence、评审摘要。其中 decision 只能是 approved 或 needs_revision；reason、required_changes、评审摘要必须使用中文。如果任一关键项缺失或含糊，decision 必须为 needs_revision，并在 required_changes 中列出中文的具体修改项；只有全部关键项清晰可执行时才输出 approved。"
+      },
+      "timeout_seconds": 1200
+    },
+    {
+      "id": "risk_mitigation_branch",
+      "label": "风险缓解补充",
+      "operation": "agent_task",
+      "join": "any",
+      "deps": [
+        "quality_gate",
+        "release_plan",
+        "security_plan"
+      ],
+      "agent": {
+        "backend": "hermes",
+        "agent_key": "risk_manager",
+        "context_policy": "provided_context_only",
+        "runtime_profile": "hermes_oneshot",
+        "execution_mode": "hermes_oneshot",
+        "poll_seconds": 10,
+        "timeout_seconds": 900,
+        "prompt_payload_limit": 10000,
+        "prompt": "请基于质量评审门的 required_changes 和上游方案，输出“上线前风险缓解补充方案”。输出必须是合法 JSON 对象，不要 markdown。字段包含：风险项、缓解措施、建议负责人、验证步骤、剩余风险。所有字段值都必须使用中文。"
+      },
+      "timeout_seconds": 1200
+    },
+    {
+      "id": "approval_package",
+      "label": "上线批准包",
+      "operation": "agent_task",
+      "join": "any",
+      "deps": [
+        "quality_gate",
+        "release_plan",
+        "security_plan",
+        "ux_plan",
+        "risk_mitigation_branch"
+      ],
+      "agent": {
+        "backend": "hermes",
+        "agent_key": "launch_reviewer",
+        "context_policy": "provided_context_only",
+        "runtime_profile": "hermes_oneshot",
+        "execution_mode": "hermes_oneshot",
+        "poll_seconds": 10,
+        "timeout_seconds": 900,
+        "prompt_payload_limit": 12000,
+        "prompt": "请生成“企业内部知识库助手首期试点上线批准包”。若存在风险缓解补充方案，请把它作为补充风险控制纳入结论。输出必须是合法 JSON 对象，不要 markdown。字段包含：上线决策、管理层摘要、批准范围、上线前检查清单、监控计划、回滚触发条件、剩余风险、下一步行动。其中“上线决策”的值只能是 go、conditional_go 或 no_go；其他字段值必须使用中文。"
+      },
+      "timeout_seconds": 1200
+    }
+  ],
+  "edges": [
+    {
+      "from": "task_intake",
+      "to": "release_plan",
+      "label": "形成上线主方案"
+    },
+    {
+      "from": "task_intake",
+      "to": "security_plan",
+      "label": "并行安全方案"
+    },
+    {
+      "from": "task_intake",
+      "to": "ux_plan",
+      "label": "并行体验方案"
+    },
+    {
+      "from": "release_plan",
+      "to": "quality_gate",
+      "label": "提交主方案评审"
+    },
+    {
+      "from": "security_plan",
+      "to": "quality_gate",
+      "label": "提交安全方案评审"
+    },
+    {
+      "from": "ux_plan",
+      "to": "quality_gate",
+      "label": "提交体验方案评审"
+    },
+    {
+      "from": "quality_gate",
+      "to": "release_plan",
+      "when": "last.decision == 'needs_revision' and visits.release_plan < 3",
+      "label": "评审要求修改，重跑上线方案"
+    },
+    {
+      "from": "quality_gate",
+      "to": "security_plan",
+      "when": "last.decision == 'needs_revision' and visits.security_plan < 3",
+      "label": "评审要求修改，重跑安全方案"
+    },
+    {
+      "from": "quality_gate",
+      "to": "ux_plan",
+      "when": "last.decision == 'needs_revision' and visits.ux_plan < 3",
+      "label": "评审要求修改，重跑体验方案"
+    },
+    {
+      "from": "quality_gate",
+      "to": "risk_mitigation_branch",
+      "when": "last.decision == 'needs_revision' and visits.release_plan >= 3",
+      "label": "达到循环上限，转风险缓解分支"
+    },
+    {
+      "from": "quality_gate",
+      "to": "approval_package",
+      "when": "last.decision == 'approved'",
+      "label": "评审通过"
+    },
+    {
+      "from": "risk_mitigation_branch",
+      "to": "approval_package",
+      "label": "带风险缓解进入批准包"
+    }
+  ]
+}

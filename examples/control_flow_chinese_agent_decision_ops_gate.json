@@ -1,0 +1,119 @@
+{
+  "id": "control-flow-chinese-agent-decision-ops-gate",
+  "name": "中文真实Agent决策分支 - 运维评审门",
+  "graph_type": "control_flow",
+  "max_total_visits": 14,
+  "input": {
+    "service": "持久化多Agent编排内核",
+    "objective": "确认一次生产压测和运维接入方案是否可以执行",
+    "risk": "真实Agent任务可能长时间运行，Temporal workflow需要保持可恢复等待"
+  },
+  "start": "ops_context",
+  "nodes": [
+    {
+      "id": "ops_context",
+      "label": "Simulator 运维上下文",
+      "operation": "emit",
+      "params": {
+        "service": "$input.service",
+        "objective": "$input.objective",
+        "risk": "$input.risk"
+      },
+      "simulate": {
+        "min_seconds": 2,
+        "max_seconds": 5
+      }
+    },
+    {
+      "id": "ops_runbook",
+      "label": "真实Agent 运维Runbook",
+      "operation": "agent_task",
+      "join": "any",
+      "max_visits": 3,
+      "deps": [
+        "ops_context",
+        "ops_review_gate"
+      ],
+      "agent": {
+        "backend": "multica",
+        "agent_key": "devops",
+        "context_policy": "provided_context_only",
+        "runtime_profile": "maos_compact_agent",
+        "execution_mode": "multica",
+        "status": "in_progress",
+        "priority": "high",
+        "poll_seconds": 30,
+        "prompt": "请只基于A2A payload，生成中文生产压测和运维接入Runbook。若看到ops_review_gate中的needs_revision评审意见，请合并其reason和required_changes重新生成Runbook。完成后把结果作为Multica评论提交，并将任务状态更新为in_review或done。"
+      },
+      "timeout_seconds": 7200
+    },
+    {
+      "id": "ops_review_gate",
+      "label": "真实Agent 运维评审门",
+      "operation": "agent_task",
+      "join": "any",
+      "max_visits": 3,
+      "deps": [
+        "ops_runbook"
+      ],
+      "agent": {
+        "backend": "multica",
+        "agent_key": "qa",
+        "context_policy": "provided_context_only",
+        "runtime_profile": "maos_compact_agent",
+        "execution_mode": "multica",
+        "status": "in_progress",
+        "priority": "high",
+        "poll_seconds": 30,
+        "prompt": "你是真实Agent运维评审门。请只基于A2A payload判断ops_runbook是否可执行。最终评论末尾必须输出独立JSON代码块：{\"decision\":\"needs_revision或approved\",\"reason\":\"中文原因\",\"required_changes\":[\"修改项；没有则输出空数组\"],\"confidence\":0.0到1.0}。如果缺少监控、回滚、负责人、验证命令或失败处理，请输出needs_revision；否则输出approved。完成后把结果作为Multica评论提交，并将任务状态更新为in_review或done。"
+      },
+      "timeout_seconds": 7200
+    },
+    {
+      "id": "ops_execution_package",
+      "label": "Simulator 运维执行包",
+      "operation": "join",
+      "join": "any",
+      "deps": [
+        "ops_runbook",
+        "ops_review_gate"
+      ],
+      "params": {
+        "fields": {
+          "status": "ready_for_execution",
+          "gate_decision": "$deps.ops_review_gate.decision",
+          "gate_reason": "$deps.ops_review_gate.reason",
+          "runbook": "$deps.ops_runbook.latest_comment"
+        }
+      },
+      "simulate": {
+        "min_seconds": 2,
+        "max_seconds": 5
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "ops_context",
+      "to": "ops_runbook",
+      "label": "生成Runbook"
+    },
+    {
+      "from": "ops_runbook",
+      "to": "ops_review_gate",
+      "label": "真实运维评审"
+    },
+    {
+      "from": "ops_review_gate",
+      "to": "ops_runbook",
+      "when": "last.decision == 'needs_revision'",
+      "label": "运维Agent要求修改，回到Runbook"
+    },
+    {
+      "from": "ops_review_gate",
+      "to": "ops_execution_package",
+      "when": "last.decision == 'approved'",
+      "label": "运维Agent批准"
+    }
+  ]
+}

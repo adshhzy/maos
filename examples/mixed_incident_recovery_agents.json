@@ -1,0 +1,137 @@
+﻿{
+  "id": "mixed-incident-recovery-agents",
+  "name": "Mixed Incident Recovery Real Agents DAG",
+  "input": {
+    "incident_id": "inc-maos-20260615-01",
+    "service": "agent-orchestration-api",
+    "symptoms": [
+      "task submissions intermittently time out",
+      "real Agent dispatch latency is high",
+      "dashboard refresh should remain stable"
+    ]
+  },
+  "nodes": [
+    {
+      "id": "incident_snapshot",
+      "label": "Simulator incident snapshot",
+      "operation": "emit",
+      "params": {
+        "incident_id": "$input.incident_id",
+        "service": "$input.service",
+        "symptoms": "$input.symptoms"
+      },
+      "simulate": {
+        "min_seconds": 3,
+        "max_seconds": 8
+      }
+    },
+    {
+      "id": "log_collection",
+      "label": "Simulator log collection",
+      "operation": "status",
+      "deps": ["incident_snapshot"],
+      "params": {
+        "status": "collected",
+        "details": {
+          "source": "application logs",
+          "window": "last 30 minutes"
+        }
+      },
+      "simulate": {
+        "min_seconds": 8,
+        "max_seconds": 18
+      }
+    },
+    {
+      "id": "metric_collection",
+      "label": "Simulator metric collection",
+      "operation": "status",
+      "deps": ["incident_snapshot"],
+      "params": {
+        "status": "collected",
+        "details": {
+          "source": "runtime metrics",
+          "window": "last 30 minutes"
+        }
+      },
+      "simulate": {
+        "min_seconds": 8,
+        "max_seconds": 18
+      }
+    },
+    {
+      "id": "sre_diagnosis",
+      "label": "Real DevOps diagnosis agent",
+      "operation": "agent_task",
+      "deps": ["incident_snapshot", "log_collection", "metric_collection"],
+      "agent": {
+        "backend": "multica",
+        "agent_key": "devops",
+        "context_policy": "provided_context_only",
+        "runtime_profile": "maos_compact_agent",
+        "execution_mode": "multica",
+        "status": "in_progress",
+        "priority": "high",
+        "poll_seconds": 30,
+        "prompt": "Use the incident snapshot, collected logs, and collected metrics to diagnose likely causes. Propose immediate mitigation, rollback criteria, monitoring checks, and a short-term fix plan. Add the result as a Multica comment and move the task to in_review or done."
+      },
+      "timeout_seconds": 7200
+    },
+    {
+      "id": "customer_update",
+      "label": "Real docs/customer update agent",
+      "operation": "agent_task",
+      "deps": ["incident_snapshot", "sre_diagnosis"],
+      "agent": {
+        "backend": "multica",
+        "agent_key": "docs",
+        "context_policy": "provided_context_only",
+        "runtime_profile": "maos_compact_agent",
+        "execution_mode": "multica",
+        "status": "in_progress",
+        "priority": "medium",
+        "poll_seconds": 30,
+        "prompt": "Draft a concise customer-facing incident update based only on the incident snapshot and SRE diagnosis. Include impact, current status, mitigation, next update timing, and support guidance. Add the result as a Multica comment and move the task to in_review or done."
+      },
+      "timeout_seconds": 7200
+    },
+    {
+      "id": "recovery_score",
+      "label": "Simulator recovery score",
+      "operation": "template",
+      "deps": ["sre_diagnosis", "customer_update"],
+      "params": {
+        "fields": {
+          "status": "scored",
+          "risk": "medium",
+          "message": "Simulator recovery score generated after ${deps_sre_diagnosis.status} diagnosis and ${deps_customer_update.status} update"
+        }
+      },
+      "simulate": {
+        "min_seconds": 5,
+        "max_seconds": 12
+      }
+    },
+    {
+      "id": "incident_closeout",
+      "label": "Simulator incident closeout",
+      "operation": "join",
+      "deps": ["sre_diagnosis", "customer_update", "recovery_score"],
+      "params": {
+        "fields": {
+          "status": "closeout_ready",
+          "diagnosis_status": "$deps.sre_diagnosis.status",
+          "diagnosis_note": "$deps.sre_diagnosis.latest_comment",
+          "customer_update_status": "$deps.customer_update.status",
+          "customer_update_note": "$deps.customer_update.latest_comment",
+          "recovery_score": "$deps.recovery_score.message"
+        }
+      },
+      "simulate": {
+        "min_seconds": 4,
+        "max_seconds": 10
+      }
+    }
+  ]
+}
+

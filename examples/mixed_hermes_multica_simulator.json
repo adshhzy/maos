@@ -1,0 +1,100 @@
+{
+  "id": "mixed-hermes-multica-simulator",
+  "name": "Mixed Direct Hermes + Multica + Simulator DAG",
+  "input": {
+    "project": "持久化多 Agent 编排内核",
+    "goal": "验证 MAOS 可以同时调度 direct Hermes、Multica Agent 和 simulator 节点。",
+    "constraints": [
+      "轻量评审节点应绕过 Multica，直接调用 Hermes oneshot",
+      "复杂架构评审仍可保留 Multica Agent 路径",
+      "测试和包装节点继续使用 simulator"
+    ]
+  },
+  "nodes": [
+    {
+      "id": "prepare_context",
+      "label": "准备任务上下文",
+      "operation": "emit",
+      "params": {
+        "project": "$input.project",
+        "goal": "$input.goal",
+        "constraints": "$input.constraints"
+      },
+      "simulate": {
+        "min_seconds": 2,
+        "max_seconds": 5
+      }
+    },
+    {
+      "id": "hermes_fast_review",
+      "label": "Hermes 快速评审",
+      "operation": "agent_task",
+      "deps": ["prepare_context"],
+      "agent": {
+        "backend": "hermes",
+        "agent_key": "fast_reviewer",
+        "context_policy": "provided_context_only",
+        "runtime_profile": "hermes_oneshot",
+        "execution_mode": "hermes_oneshot",
+        "poll_seconds": 30,
+        "timeout_seconds": 300,
+        "prompt": "请只基于 A2A Context Payload，用中文给出轻量评审结论。输出一个 JSON 对象，字段包括 decision、reason、risks，其中 decision 只能是 approved 或 needs_revision。"
+      },
+      "timeout_seconds": 900
+    },
+    {
+      "id": "simulator_scope_check",
+      "label": "Simulator 范围检查",
+      "operation": "template",
+      "deps": ["prepare_context"],
+      "params": {
+        "fields": {
+          "status": "estimated",
+          "message": "Simulator 判断该验证任务范围适中",
+          "risk": "medium"
+        }
+      },
+      "simulate": {
+        "min_seconds": 2,
+        "max_seconds": 5
+      }
+    },
+    {
+      "id": "multica_architecture_review",
+      "label": "Multica 架构师评审",
+      "operation": "agent_task",
+      "deps": ["prepare_context", "hermes_fast_review", "simulator_scope_check"],
+      "agent": {
+        "backend": "multica",
+        "agent_key": "architect",
+        "context_policy": "provided_context_only",
+        "runtime_profile": "maos_compact_agent",
+        "execution_mode": "multica",
+        "status": "in_progress",
+        "priority": "high",
+        "poll_seconds": 30,
+        "prompt": "请基于上游 Hermes 快速评审和 Simulator 范围检查，输出架构接入建议，重点说明 provider 模式、A2A 数据传递、Temporal durable wait，以及后续接入 Codex app-server 的风险。完成后添加评论并把任务状态改为 in_review 或 done。"
+      },
+      "timeout_seconds": 7200
+    },
+    {
+      "id": "final_summary",
+      "label": "汇总输出",
+      "operation": "join",
+      "deps": ["hermes_fast_review", "simulator_scope_check", "multica_architecture_review"],
+      "params": {
+        "fields": {
+          "status": "complete",
+          "hermes_decision": "$deps.hermes_fast_review.decision",
+          "hermes_reason": "$deps.hermes_fast_review.reason",
+          "scope_message": "$deps.simulator_scope_check.message",
+          "architecture_note": "$deps.multica_architecture_review.latest_comment"
+        }
+      },
+      "simulate": {
+        "min_seconds": 2,
+        "max_seconds": 5
+      }
+    }
+  ]
+}

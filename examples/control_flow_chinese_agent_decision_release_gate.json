@@ -1,0 +1,147 @@
+{
+  "id": "control-flow-chinese-agent-decision-release-gate",
+  "name": "中文真实Agent决策分支 - 发布评审门",
+  "graph_type": "control_flow",
+  "max_total_visits": 14,
+  "input": {
+    "project": "MAOS控制流图解释器发布",
+    "goal": "准备一次内部灰度发布，要求真实Agent根据上游结果决定是否需要补充修改。",
+    "constraints": [
+      "分支门必须由真实Agent输出decision驱动",
+      "decision只能是needs_revision或approved",
+      "如果需要补充修改，回到上游方案节点重新生成"
+    ]
+  },
+  "start": "release_context",
+  "nodes": [
+    {
+      "id": "release_context",
+      "label": "Simulator 发布上下文",
+      "operation": "emit",
+      "params": {
+        "project": "$input.project",
+        "goal": "$input.goal",
+        "constraints": "$input.constraints"
+      },
+      "simulate": {
+        "min_seconds": 2,
+        "max_seconds": 5
+      }
+    },
+    {
+      "id": "release_plan",
+      "label": "真实Agent 发布方案",
+      "operation": "agent_task",
+      "join": "any",
+      "max_visits": 3,
+      "deps": [
+        "release_context",
+        "release_review_gate"
+      ],
+      "agent": {
+        "backend": "multica",
+        "agent_key": "product_strategy",
+        "context_policy": "provided_context_only",
+        "runtime_profile": "maos_compact_agent",
+        "execution_mode": "multica",
+        "status": "in_progress",
+        "priority": "medium",
+        "poll_seconds": 30,
+        "prompt": "请只基于A2A payload，输出中文发布方案。若看到release_review_gate中的needs_revision评审意见，请合并其reason和required_changes重新生成方案。最后正常提交中文说明，并可以附带简短JSON摘要。完成后把结果作为Multica评论提交，并将任务状态更新为in_review或done。"
+      },
+      "timeout_seconds": 7200
+    },
+    {
+      "id": "release_review_gate",
+      "label": "真实Agent 发布评审门",
+      "operation": "agent_task",
+      "join": "any",
+      "max_visits": 3,
+      "deps": [
+        "release_plan"
+      ],
+      "agent": {
+        "backend": "multica",
+        "agent_key": "qa",
+        "context_policy": "provided_context_only",
+        "runtime_profile": "maos_compact_agent",
+        "execution_mode": "multica",
+        "status": "in_progress",
+        "priority": "high",
+        "poll_seconds": 30,
+        "prompt": "你是真实Agent评审分支门。请只基于A2A payload评审release_plan是否可以进入发布说明阶段。最终评论末尾必须输出一个独立JSON代码块，格式严格如下：{\"decision\":\"needs_revision或approved\",\"reason\":\"一句中文原因\",\"required_changes\":[\"如需修改列出修改项；没有则输出空数组\"],\"confidence\":0.0到1.0}。如果方案仍有明显缺口，请输出needs_revision；如果已经足够清晰，请输出approved。完成后把结果作为Multica评论提交，并将任务状态更新为in_review或done。"
+      },
+      "timeout_seconds": 7200
+    },
+    {
+      "id": "release_notes",
+      "label": "真实Agent 发布说明",
+      "operation": "agent_task",
+      "join": "any",
+      "deps": [
+        "release_plan",
+        "release_review_gate"
+      ],
+      "agent": {
+        "backend": "multica",
+        "agent_key": "docs",
+        "context_policy": "provided_context_only",
+        "runtime_profile": "maos_compact_agent",
+        "execution_mode": "multica",
+        "status": "in_progress",
+        "priority": "medium",
+        "poll_seconds": 30,
+        "prompt": "请只基于A2A payload，编写中文内部发布说明。说明必须引用release_review_gate中的decision和reason，并包含验证步骤、风险提示和回滚建议。完成后把结果作为Multica评论提交，并将任务状态更新为in_review或done。"
+      },
+      "timeout_seconds": 7200
+    },
+    {
+      "id": "release_package",
+      "label": "Simulator 发布包汇总",
+      "operation": "join",
+      "deps": [
+        "release_notes"
+      ],
+      "params": {
+        "fields": {
+          "status": "packaged",
+          "notes_status": "$deps.release_notes.status",
+          "notes": "$deps.release_notes.latest_comment"
+        }
+      },
+      "simulate": {
+        "min_seconds": 2,
+        "max_seconds": 5
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "release_context",
+      "to": "release_plan",
+      "label": "生成方案"
+    },
+    {
+      "from": "release_plan",
+      "to": "release_review_gate",
+      "label": "真实Agent评审"
+    },
+    {
+      "from": "release_review_gate",
+      "to": "release_plan",
+      "when": "last.decision == 'needs_revision'",
+      "label": "Agent要求修改，回到发布方案"
+    },
+    {
+      "from": "release_review_gate",
+      "to": "release_notes",
+      "when": "last.decision == 'approved'",
+      "label": "Agent评审通过"
+    },
+    {
+      "from": "release_notes",
+      "to": "release_package",
+      "label": "汇总"
+    }
+  ]
+}

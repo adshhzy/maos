@@ -1,0 +1,14 @@
+﻿{
+  "id": "video-rendering",
+  "name": "Video rendering DAG",
+  "input": {"video": "launch-demo", "renditions": ["720p", "1080p", "4k"]},
+  "nodes": [
+    {"id": "ingest_media", "label": "Ingest media", "operation": "emit", "simulate": {"min_seconds": 8, "max_seconds": 18}, "params": {"video": "$input.video", "renditions": "$input.renditions"}},
+    {"id": "render_720p", "label": "Render 720p", "operation": "status", "deps": ["ingest_media"], "simulate": {"min_seconds": 18, "max_seconds": 36}, "params": {"status": "rendered", "details": {"rendition": "720p"}}},
+    {"id": "render_1080p", "label": "Render 1080p", "operation": "status", "deps": ["ingest_media"], "simulate": {"min_seconds": 24, "max_seconds": 50}, "params": {"status": "rendered", "details": {"rendition": "1080p"}}},
+    {"id": "render_4k", "label": "Render 4k", "operation": "status", "deps": ["ingest_media"], "simulate": {"min_seconds": 35, "max_seconds": 70}, "params": {"status": "rendered", "details": {"rendition": "4k"}}},
+    {"id": "package", "label": "Package", "operation": "join", "deps": ["render_720p", "render_1080p", "render_4k"], "simulate": {"min_seconds": 12, "max_seconds": 24}, "params": {"fields": {"status": "packaged", "artifact": "hls-${input_video}"}}},
+    {"id": "publish_cdn", "label": "Publish CDN", "operation": "template", "deps": ["package"], "simulate": {"min_seconds": 8, "max_seconds": 20}, "params": {"fields": {"status": "published", "message": "Published ${deps_package_artifact}"}}}
+  ]
+}
+

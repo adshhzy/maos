@@ -1,0 +1,13 @@
+﻿{
+  "id": "security-audit",
+  "name": "Security audit DAG",
+  "input": {"release": "2026.06.10", "targets": ["api", "web", "worker"]},
+  "nodes": [
+    {"id": "prepare_scope", "label": "Prepare scope", "operation": "emit", "simulate": {"min_seconds": 8, "max_seconds": 16}, "params": {"release": "$input.release", "targets": "$input.targets"}},
+    {"id": "static_scan", "label": "Static scan", "operation": "status", "deps": ["prepare_scope"], "simulate": {"min_seconds": 20, "max_seconds": 45}, "params": {"status": "passed", "details": {"scanner": "sast"}}},
+    {"id": "dependency_scan", "label": "Dependency scan", "operation": "status", "deps": ["prepare_scope"], "simulate": {"min_seconds": 15, "max_seconds": 38}, "params": {"status": "passed", "details": {"scanner": "sca"}}},
+    {"id": "runtime_scan", "label": "Runtime scan", "operation": "status", "deps": ["prepare_scope"], "simulate": {"min_seconds": 22, "max_seconds": 50}, "params": {"status": "passed", "details": {"scanner": "dast"}}},
+    {"id": "risk_review", "label": "Risk review", "operation": "join", "deps": ["static_scan", "dependency_scan", "runtime_scan"], "simulate": {"min_seconds": 12, "max_seconds": 30}, "params": {"fields": {"decision": "approved", "static": "$deps.static_scan.status", "dependency": "$deps.dependency_scan.status", "runtime": "$deps.runtime_scan.status"}}}
+  ]
+}
+

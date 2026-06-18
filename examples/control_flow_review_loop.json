@@ -1,0 +1,120 @@
+{
+  "id": "control-flow-review-loop",
+  "name": "Control-flow review loop",
+  "graph_type": "control_flow",
+  "max_total_visits": 12,
+  "input": {
+    "task_id": "cf-20260616-001",
+    "topic": "Design a compact multi-agent handoff plan"
+  },
+  "start": "collect_requirements",
+  "nodes": [
+    {
+      "id": "collect_requirements",
+      "label": "Collect requirements",
+      "operation": "emit",
+      "params": {
+        "task_id": "$input.task_id",
+        "topic": "$input.topic",
+        "acceptance_score": 0.8
+      },
+      "simulate": {
+        "min_seconds": 1,
+        "max_seconds": 2
+      }
+    },
+    {
+      "id": "draft_solution",
+      "label": "Draft solution",
+      "operation": "join",
+      "join": "any",
+      "max_visits": 2,
+      "deps": ["collect_requirements", "revise_notes"],
+      "params": {
+        "fields": {
+          "status": "drafted",
+          "topic": "$deps.collect_requirements.topic",
+          "revision_context": "Use revision notes when the loop returns to this node."
+        }
+      },
+      "simulate": {
+        "min_seconds": 1,
+        "max_seconds": 3
+      }
+    },
+    {
+      "id": "review_gate",
+      "label": "Review gate",
+      "type": "condition",
+      "operation": "condition",
+      "join": "any",
+      "max_visits": 2,
+      "params": {
+        "message": "Review completed. First visit requests revision; second visit approves."
+      }
+    },
+    {
+      "id": "revise_notes",
+      "label": "Prepare revision notes",
+      "operation": "status",
+      "join": "any",
+      "params": {
+        "status": "revise",
+        "details": {
+          "message": "Tighten the handoff plan and make the next draft more operational."
+        }
+      },
+      "simulate": {
+        "min_seconds": 1,
+        "max_seconds": 2
+      }
+    },
+    {
+      "id": "publish_plan",
+      "label": "Publish plan",
+      "operation": "join",
+      "join": "any",
+      "deps": ["draft_solution"],
+      "params": {
+        "fields": {
+          "status": "approved",
+          "message": "Control-flow loop exited through the approval branch.",
+          "topic": "$deps.draft_solution.topic"
+        }
+      },
+      "simulate": {
+        "min_seconds": 1,
+        "max_seconds": 2
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "collect_requirements",
+      "to": "draft_solution",
+      "label": "start draft"
+    },
+    {
+      "from": "draft_solution",
+      "to": "review_gate",
+      "label": "submit review"
+    },
+    {
+      "from": "review_gate",
+      "to": "revise_notes",
+      "when": "visits.review_gate < 2",
+      "label": "needs revision"
+    },
+    {
+      "from": "revise_notes",
+      "to": "draft_solution",
+      "label": "loop back"
+    },
+    {
+      "from": "review_gate",
+      "to": "publish_plan",
+      "when": "visits.review_gate >= 2",
+      "label": "approved"
+    }
+  ]
+}

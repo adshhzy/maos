@@ -1,0 +1,209 @@
+{
+  "id": "all-hermes-chinese-knowledge-assistant-launch",
+  "name": "全 Hermes 中文任务图 - 企业知识库助手上线准备",
+  "graph_type": "dag",
+  "input": {
+    "project": "企业内部知识库助手",
+    "goal": "为客服、销售和实施团队提供可信的中文问答与资料检索能力",
+    "target_users": [
+      "一线客服",
+      "售前顾问",
+      "实施交付经理",
+      "客户成功经理"
+    ],
+    "constraints": [
+      "不得泄露客户隐私和合同敏感信息",
+      "回答必须能追溯到知识库来源",
+      "上线前需要有回滚方案和人工兜底流程",
+      "首期只支持中文问答"
+    ]
+  },
+  "nodes": [
+    {
+      "id": "business_goal_analysis",
+      "label": "业务目标澄清",
+      "operation": "agent_task",
+      "agent": {
+        "backend": "hermes",
+        "agent_key": "business_analyst",
+        "context_policy": "provided_context_only",
+        "runtime_profile": "hermes_oneshot",
+        "execution_mode": "hermes_oneshot",
+        "poll_seconds": 30,
+        "timeout_seconds": 900,
+        "prompt": "请扮演业务分析角色。只基于可用输入数据，用中文梳理该知识库助手的业务目标、主要使用场景、成功指标和首期不做的范围。输出结构化 JSON，字段包含：business_goals、primary_scenarios、success_metrics、out_of_scope、assumptions。"
+      },
+      "timeout_seconds": 1200
+    },
+    {
+      "id": "knowledge_source_plan",
+      "label": "知识源接入规划",
+      "operation": "agent_task",
+      "deps": [
+        "business_goal_analysis"
+      ],
+      "agent": {
+        "backend": "hermes",
+        "agent_key": "knowledge_architect",
+        "context_policy": "provided_context_only",
+        "runtime_profile": "hermes_oneshot",
+        "execution_mode": "hermes_oneshot",
+        "poll_seconds": 30,
+        "timeout_seconds": 900,
+        "prompt": "请扮演知识工程角色。基于上游业务目标，设计首期知识源接入方案。必须说明知识源类型、更新频率、质量校验规则、失效内容处理办法和引用溯源方式。输出 JSON，字段包含：sources、ingestion_plan、quality_checks、staleness_policy、citation_strategy。"
+      },
+      "timeout_seconds": 1200
+    },
+    {
+      "id": "security_privacy_review",
+      "label": "安全与隐私评审",
+      "operation": "agent_task",
+      "deps": [
+        "business_goal_analysis"
+      ],
+      "agent": {
+        "backend": "hermes",
+        "agent_key": "security_reviewer",
+        "context_policy": "provided_context_only",
+        "runtime_profile": "hermes_oneshot",
+        "execution_mode": "hermes_oneshot",
+        "poll_seconds": 30,
+        "timeout_seconds": 900,
+        "prompt": "请扮演安全评审角色。基于输入约束和业务目标，识别隐私、安全、权限、审计和越权访问风险，并给出可执行控制措施。输出 JSON，字段包含：risk_level、risks、required_controls、audit_requirements、open_questions。"
+      },
+      "timeout_seconds": 1200
+    },
+    {
+      "id": "user_experience_design",
+      "label": "使用体验设计",
+      "operation": "agent_task",
+      "deps": [
+        "business_goal_analysis"
+      ],
+      "agent": {
+        "backend": "hermes",
+        "agent_key": "ux_designer",
+        "context_policy": "provided_context_only",
+        "runtime_profile": "hermes_oneshot",
+        "execution_mode": "hermes_oneshot",
+        "poll_seconds": 30,
+        "timeout_seconds": 900,
+        "prompt": "请扮演产品体验设计角色。为目标用户设计首期交互流程，包括提问、追问、引用展示、低置信度提示、人工转接和反馈入口。输出 JSON，字段包含：user_flows、answer_format、fallback_design、feedback_loop、ux_risks。"
+      },
+      "timeout_seconds": 1200
+    },
+    {
+      "id": "technical_architecture",
+      "label": "技术架构方案",
+      "operation": "agent_task",
+      "deps": [
+        "knowledge_source_plan",
+        "security_privacy_review"
+      ],
+      "agent": {
+        "backend": "hermes",
+        "agent_key": "solution_architect",
+        "context_policy": "provided_context_only",
+        "runtime_profile": "hermes_oneshot",
+        "execution_mode": "hermes_oneshot",
+        "poll_seconds": 30,
+        "timeout_seconds": 900,
+        "prompt": "请扮演解决方案架构角色。结合知识源规划和安全评审，设计首期技术架构。必须覆盖数据接入、索引、检索、生成、权限过滤、日志审计、监控告警和回滚。输出 JSON，字段包含：architecture_summary、components、data_flow、permission_model、observability、rollback_plan。"
+      },
+      "timeout_seconds": 1200
+    },
+    {
+      "id": "launch_readiness_checklist",
+      "label": "上线准备清单",
+      "operation": "agent_task",
+      "deps": [
+        "technical_architecture",
+        "user_experience_design"
+      ],
+      "agent": {
+        "backend": "hermes",
+        "agent_key": "release_manager",
+        "context_policy": "provided_context_only",
+        "runtime_profile": "hermes_oneshot",
+        "execution_mode": "hermes_oneshot",
+        "poll_seconds": 30,
+        "timeout_seconds": 900,
+        "prompt": "请扮演发布管理角色。基于技术架构和体验设计，生成上线准备清单。必须包含测试项、验收标准、上线步骤、监控指标、回滚触发条件和负责人建议。输出 JSON，字段包含：test_plan、acceptance_criteria、launch_steps、monitoring_metrics、rollback_triggers、owners。"
+      },
+      "timeout_seconds": 1200
+    },
+    {
+      "id": "final_go_no_go_decision",
+      "label": "最终上线决策",
+      "operation": "agent_task",
+      "deps": [
+        "security_privacy_review",
+        "technical_architecture",
+        "launch_readiness_checklist"
+      ],
+      "agent": {
+        "backend": "hermes",
+        "agent_key": "launch_reviewer",
+        "context_policy": "provided_context_only",
+        "runtime_profile": "hermes_oneshot",
+        "execution_mode": "hermes_oneshot",
+        "poll_seconds": 30,
+        "timeout_seconds": 900,
+        "prompt": "请扮演上线评审角色。综合安全评审、技术架构和上线清单，给出是否允许首期试点上线的决策。输出必须是 JSON，字段包含：decision、reason、must_fix_before_launch、can_fix_after_launch、pilot_scope、executive_summary。其中 decision 只能是 go、conditional_go 或 no_go。"
+      },
+      "timeout_seconds": 1200
+    }
+  ],
+  "edges": [
+    {
+      "from": "business_goal_analysis",
+      "to": "knowledge_source_plan",
+      "label": "业务目标约束知识源"
+    },
+    {
+      "from": "business_goal_analysis",
+      "to": "security_privacy_review",
+      "label": "业务场景触发安全评审"
+    },
+    {
+      "from": "business_goal_analysis",
+      "to": "user_experience_design",
+      "label": "业务场景驱动体验设计"
+    },
+    {
+      "from": "knowledge_source_plan",
+      "to": "technical_architecture",
+      "label": "知识源方案输入架构"
+    },
+    {
+      "from": "security_privacy_review",
+      "to": "technical_architecture",
+      "label": "安全控制输入架构"
+    },
+    {
+      "from": "technical_architecture",
+      "to": "launch_readiness_checklist",
+      "label": "架构方案生成上线清单"
+    },
+    {
+      "from": "user_experience_design",
+      "to": "launch_readiness_checklist",
+      "label": "体验方案生成验收项"
+    },
+    {
+      "from": "security_privacy_review",
+      "to": "final_go_no_go_decision",
+      "label": "安全结论输入上线决策"
+    },
+    {
+      "from": "technical_architecture",
+      "to": "final_go_no_go_decision",
+      "label": "技术方案输入上线决策"
+    },
+    {
+      "from": "launch_readiness_checklist",
+      "to": "final_go_no_go_decision",
+      "label": "上线清单输入最终评审"
+    }
+  ]
+}

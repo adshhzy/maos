@@ -1,0 +1,14 @@
+﻿{
+  "id": "finance-close",
+  "name": "Finance close DAG",
+  "input": {"period": "2026-06", "ledgers": ["ar", "ap", "gl"]},
+  "nodes": [
+    {"id": "start_close", "label": "Start close", "operation": "emit", "simulate": {"min_seconds": 7, "max_seconds": 14}, "params": {"period": "$input.period", "ledgers": "$input.ledgers"}},
+    {"id": "close_ar", "label": "Close AR", "operation": "status", "deps": ["start_close"], "simulate": {"min_seconds": 20, "max_seconds": 42}, "params": {"status": "closed", "details": {"ledger": "ar"}}},
+    {"id": "close_ap", "label": "Close AP", "operation": "status", "deps": ["start_close"], "simulate": {"min_seconds": 18, "max_seconds": 40}, "params": {"status": "closed", "details": {"ledger": "ap"}}},
+    {"id": "close_gl", "label": "Close GL", "operation": "status", "deps": ["start_close"], "simulate": {"min_seconds": 22, "max_seconds": 46}, "params": {"status": "closed", "details": {"ledger": "gl"}}},
+    {"id": "reconcile", "label": "Reconcile", "operation": "join", "deps": ["close_ar", "close_ap", "close_gl"], "simulate": {"min_seconds": 16, "max_seconds": 34}, "params": {"fields": {"status": "reconciled", "ar": "$deps.close_ar.status", "ap": "$deps.close_ap.status", "gl": "$deps.close_gl.status"}}},
+    {"id": "publish_report", "label": "Publish report", "operation": "template", "deps": ["reconcile"], "simulate": {"min_seconds": 8, "max_seconds": 18}, "params": {"fields": {"status": "published", "artifact": "close-${input_period}.pdf"}}}
+  ]
+}
+

@@ -1,0 +1,13 @@
+﻿{
+  "id": "customer-onboarding",
+  "name": "Customer onboarding DAG",
+  "input": {"customer": "acme", "modules": ["billing", "analytics", "support"]},
+  "nodes": [
+    {"id": "create_account", "label": "Create account", "operation": "emit", "simulate": {"min_seconds": 7, "max_seconds": 15}, "params": {"customer": "$input.customer", "modules": "$input.modules"}},
+    {"id": "setup_billing", "label": "Setup billing", "operation": "status", "deps": ["create_account"], "simulate": {"min_seconds": 14, "max_seconds": 30}, "params": {"status": "configured", "details": {"module": "billing"}}},
+    {"id": "setup_analytics", "label": "Setup analytics", "operation": "status", "deps": ["create_account"], "simulate": {"min_seconds": 18, "max_seconds": 36}, "params": {"status": "configured", "details": {"module": "analytics"}}},
+    {"id": "setup_support", "label": "Setup support", "operation": "status", "deps": ["create_account"], "simulate": {"min_seconds": 12, "max_seconds": 26}, "params": {"status": "configured", "details": {"module": "support"}}},
+    {"id": "welcome_packet", "label": "Welcome packet", "operation": "join", "deps": ["setup_billing", "setup_analytics", "setup_support"], "simulate": {"min_seconds": 10, "max_seconds": 20}, "params": {"fields": {"status": "sent", "channel": "email"}}}
+  ]
+}
+

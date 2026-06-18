@@ -1,0 +1,21 @@
+# Python cache and test/runtime byproducts
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Local virtual environment and secrets
+.venv/
+.env
+
+# Runtime logs
+*.log
+runtime_logs/
+
+# Generated document render previews
+api_summary_render/
+future_api_blueprint_render/
+
+# Ad-hoc local smoke-test graphs
+test_hermes_node*.json

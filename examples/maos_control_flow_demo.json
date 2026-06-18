@@ -1,0 +1,293 @@
+{
+  "id": "maos-control-flow-demo",
+  "name": "MAOS Control-Flow Demo",
+  "graph_type": "control_flow",
+  "max_total_visits": 15,
+  "input": {
+    "task_id": "demo-20240617-001",
+    "description": "Demonstrate MAOS control-flow features",
+    "iterations": 3
+  },
+  "start": "start_task",
+  "nodes": [
+    {
+      "id": "start_task",
+      "label": "Start task",
+      "operation": "emit",
+      "params": {
+        "task_id": "$input.task_id",
+        "description": "$input.description",
+        "iterations": "$input.iterations",
+        "status": "started"
+      },
+      "simulate": {
+        "min_seconds": 1,
+        "max_seconds": 2
+      }
+    },
+    {
+      "id": "analyze_input",
+      "label": "Analyze input",
+      "operation": "join",
+      "deps": ["start_task"],
+      "params": {
+        "fields": {
+          "status": "analyzed",
+          "task_summary": "Analyzing input for control-flow demo",
+          "iterations_remaining": "$deps.start_task.iterations"
+        }
+      },
+      "simulate": {
+        "min_seconds": 2,
+        "max_seconds": 4
+      }
+    },
+    {
+      "id": "process_data",
+      "label": "Process data",
+      "operation": "agent_task",
+      "deps": ["analyze_input"],
+      "agent": {
+        "backend": "simulator",
+        "agent_key": "processor"
+      },
+      "simulate": {
+        "min_seconds": 3,
+        "max_seconds": 6
+      }
+    },
+    {
+      "id": "quality_check",
+      "label": "Quality check",
+      "type": "condition",
+      "operation": "condition",
+      "deps": ["process_data"],
+      "params": {
+        "message": "Check if data processing meets quality standards"
+      }
+    },
+    {
+      "id": "improve_quality",
+      "label": "Improve quality",
+      "operation": "status",
+      "join": "any",
+      "max_visits": 2,
+      "deps": ["quality_check"],
+      "params": {
+        "status": "improving",
+        "details": {
+          "action": "Enhancing data quality based on feedback",
+          "iteration": "Will retry processing"
+        }
+      },
+      "simulate": {
+        "min_seconds": 2,
+        "max_seconds": 4
+      }
+    },
+    {
+      "id": "parallel_task_a",
+      "label": "Parallel task A",
+      "operation": "agent_task",
+      "deps": ["analyze_input"],
+      "agent": {
+        "backend": "simulator",
+        "agent_key": "worker_a"
+      },
+      "simulate": {
+        "min_seconds": 2,
+        "max_seconds": 5
+      }
+    },
+    {
+      "id": "parallel_task_b",
+      "label": "Parallel task B",
+      "operation": "agent_task",
+      "deps": ["analyze_input"],
+      "agent": {
+        "backend": "simulator",
+        "agent_key": "worker_b"
+      },
+      "simulate": {
+        "min_seconds": 3,
+        "max_seconds": 6
+      }
+    },
+    {
+      "id": "merge_results",
+      "label": "Merge results",
+      "operation": "join",
+      "join": "all",
+      "deps": ["parallel_task_a", "parallel_task_b"],
+      "params": {
+        "fields": {
+          "status": "merged",
+          "task_a_result": "$deps.parallel_task_a.result",
+          "task_b_result": "$deps.parallel_task_b.result",
+          "combined_status": "Parallel tasks completed and merged"
+        }
+      },
+      "simulate": {
+        "min_seconds": 1,
+        "max_seconds": 3
+      }
+    },
+    {
+      "id": "final_validation",
+      "label": "Final validation",
+      "operation": "status",
+      "deps": ["merge_results"],
+      "params": {
+        "status": "validated",
+        "details": {
+          "message": "All parallel tasks validated successfully",
+          "timestamp": "Now"
+        }
+      },
+      "simulate": {
+        "min_seconds": 1,
+        "max_seconds": 2
+      }
+    },
+    {
+      "id": "generate_report",
+      "label": "Generate report",
+      "operation": "agent_task",
+      "deps": ["final_validation"],
+      "agent": {
+        "backend": "simulator",
+        "agent_key": "reporter"
+      },
+      "simulate": {
+        "min_seconds": 2,
+        "max_seconds": 5
+      }
+    },
+    {
+      "id": "review_gate",
+      "label": "Review gate",
+      "type": "condition",
+      "operation": "condition",
+      "deps": ["generate_report"],
+      "params": {
+        "message": "Review the final report"
+      }
+    },
+    {
+      "id": "approve",
+      "label": "Approve",
+      "operation": "emit",
+      "deps": ["review_gate"],
+      "params": {
+        "status": "approved",
+        "decision": "All checks passed",
+        "completion_time": "Now"
+      },
+      "simulate": {
+        "min_seconds": 1,
+        "max_seconds": 2
+      }
+    },
+    {
+      "id": "reject",
+      "label": "Reject",
+      "operation": "status",
+      "deps": ["review_gate"],
+      "params": {
+        "status": "rejected",
+        "reason": "Report needs improvement",
+        "action": "Return to improve_quality"
+      },
+      "simulate": {
+        "min_seconds": 1,
+        "max_seconds": 2
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "start_task",
+      "to": "analyze_input",
+      "label": "Begin analysis"
+    },
+    {
+      "from": "analyze_input",
+      "to": "process_data",
+      "label": "Process data"
+    },
+    {
+      "from": "analyze_input",
+      "to": "parallel_task_a",
+      "label": "Start parallel task A"
+    },
+    {
+      "from": "analyze_input",
+      "to": "parallel_task_b",
+      "label": "Start parallel task B"
+    },
+    {
+      "from": "process_data",
+      "to": "quality_check",
+      "label": "Check quality"
+    },
+    {
+      "from": "quality_check",
+      "to": "improve_quality",
+      "when": "visits.quality_check < 2",
+      "label": "Needs improvement"
+    },
+    {
+      "from": "improve_quality",
+      "to": "process_data",
+      "label": "Retry processing"
+    },
+    {
+      "from": "quality_check",
+      "to": "merge_results",
+      "when": "visits.quality_check >= 2",
+      "label": "Quality approved"
+    },
+    {
+      "from": "parallel_task_a",
+      "to": "merge_results",
+      "label": "Task A complete"
+    },
+    {
+      "from": "parallel_task_b",
+      "to": "merge_results",
+      "label": "Task B complete"
+    },
+    {
+      "from": "merge_results",
+      "to": "final_validation",
+      "label": "Validate merged results"
+    },
+    {
+      "from": "final_validation",
+      "to": "generate_report",
+      "label": "Generate final report"
+    },
+    {
+      "from": "generate_report",
+      "to": "review_gate",
+      "label": "Submit for review"
+    },
+    {
+      "from": "review_gate",
+      "to": "approve",
+      "when": "visits.review_gate >= 2",
+      "label": "Approve report"
+    },
+    {
+      "from": "review_gate",
+      "to": "reject",
+      "when": "visits.review_gate < 2",
+      "label": "Reject report"
+    },
+    {
+      "from": "reject",
+      "to": "improve_quality",
+      "label": "Improve quality"
+    }
+  ]
+}

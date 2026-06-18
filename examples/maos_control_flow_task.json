@@ -1,0 +1,247 @@
+{
+  "id": "maos-control-flow-task",
+  "name": "MAOS Control-Flow Node Task",
+  "graph_type": "control_flow",
+  "max_total_visits": 15,
+  "input": {
+    "task_id": "maos-20240617-001",
+    "topic": "Design and implement a control-flow node for MAOS",
+    "requirements": [
+      "Support conditional branching based on agent decisions",
+      "Implement bounded loops with max_visits",
+      "Handle parallel execution of independent nodes",
+      "Support both simulator and real agent backends",
+      "Provide visualization of execution state"
+    ]
+  },
+  "start": "analyze_requirements",
+  "nodes": [
+    {
+      "id": "analyze_requirements",
+      "label": "Analyze requirements",
+      "operation": "emit",
+      "params": {
+        "task_id": "$input.task_id",
+        "topic": "$input.topic",
+        "requirements": "$input.requirements",
+        "analysis": "Requirements analysis complete"
+      },
+      "simulate": {
+        "min_seconds": 2,
+        "max_seconds": 4
+      }
+    },
+    {
+      "id": "design_architecture",
+      "label": "Design architecture",
+      "operation": "agent_task",
+      "deps": ["analyze_requirements"],
+      "agent": {
+        "backend": "hermes",
+        "agent_key": "architect",
+        "context_policy": "provided_context_only",
+        "runtime_profile": "hermes_oneshot",
+        "execution_mode": "hermes_oneshot",
+        "poll_seconds": 30,
+        "prompt": "Based on the requirements analysis, design a control-flow node architecture for MAOS. Consider: 1) How to represent conditional branches, 2) How to implement bounded loops, 3) How to handle parallel execution, 4) How to integrate with Temporal workflows. Output a JSON with fields: design_summary, key_components, risks, and complexity_level (low/medium/high)."
+      },
+      "timeout_seconds": 600
+    },
+    {
+      "id": "design_review_gate",
+      "label": "Design review gate",
+      "type": "condition",
+      "operation": "condition",
+      "deps": ["design_architecture"],
+      "params": {
+        "message": "Review the architectural design"
+      }
+    },
+    {
+      "id": "implement_core",
+      "label": "Implement core logic",
+      "operation": "agent_task",
+      "join": "any",
+      "max_visits": 2,
+      "deps": ["analyze_requirements", "design_review_gate"],
+      "agent": {
+        "backend": "hermes",
+        "agent_key": "developer",
+        "context_policy": "provided_context_only",
+        "runtime_profile": "hermes_oneshot",
+        "execution_mode": "hermes_oneshot",
+        "poll_seconds": 30,
+        "prompt": "Implement the core control-flow node logic based on the design. If there are revision notes from design_review_gate, incorporate them. Output a JSON with fields: implementation_status, files_created, tests_written, and issues_found."
+      },
+      "timeout_seconds": 900
+    },
+    {
+      "id": "implement_parallel",
+      "label": "Implement parallel execution",
+      "operation": "agent_task",
+      "deps": ["analyze_requirements"],
+      "agent": {
+        "backend": "hermes",
+        "agent_key": "developer",
+        "context_policy": "provided_context_only",
+        "runtime_profile": "hermes_oneshot",
+        "execution_mode": "hermes_oneshot",
+        "poll_seconds": 30,
+        "prompt": "Implement parallel execution support for independent nodes. Output a JSON with fields: implementation_status, concurrency_approach, and synchronization_method."
+      },
+      "timeout_seconds": 600
+    },
+    {
+      "id": "implement_visualization",
+      "label": "Implement visualization",
+      "operation": "agent_task",
+      "deps": ["analyze_requirements"],
+      "agent": {
+        "backend": "hermes",
+        "agent_key": "frontend",
+        "context_policy": "provided_context_only",
+        "runtime_profile": "hermes_oneshot",
+        "execution_mode": "hermes_oneshot",
+        "poll_seconds": 30,
+        "prompt": "Implement visualization for the control-flow execution state. Output a JSON with fields: visualization_type, features, and integration_method."
+      },
+      "timeout_seconds": 600
+    },
+    {
+      "id": "integration_test",
+      "label": "Integration test",
+      "operation": "join",
+      "join": "all",
+      "deps": ["implement_core", "implement_parallel", "implement_visualization"],
+      "params": {
+        "fields": {
+          "status": "testing",
+          "core_implementation": "$deps.implement_core.implementation_status",
+          "parallel_implementation": "$deps.implement_parallel.implementation_status",
+          "visualization_implementation": "$deps.implement_visualization.implementation_status",
+          "test_plan": "Run integration tests for the complete control-flow system"
+        }
+      },
+      "simulate": {
+        "min_seconds": 3,
+        "max_seconds": 6
+      }
+    },
+    {
+      "id": "test_review_gate",
+      "label": "Test review gate",
+      "type": "condition",
+      "operation": "condition",
+      "deps": ["integration_test"],
+      "params": {
+        "message": "Review integration test results"
+      }
+    },
+    {
+      "id": "fix_issues",
+      "label": "Fix issues",
+      "operation": "status",
+      "deps": ["test_review_gate"],
+      "params": {
+        "status": "fixing",
+        "details": {
+          "action": "Address issues found during integration testing",
+          "priority": "high"
+        }
+      },
+      "simulate": {
+        "min_seconds": 2,
+        "max_seconds": 5
+      }
+    },
+    {
+      "id": "final_validation",
+      "label": "Final validation",
+      "operation": "join",
+      "deps": ["integration_test"],
+      "params": {
+        "fields": {
+          "status": "validated",
+          "message": "Control-flow node implementation completed successfully",
+          "components": ["core_logic", "parallel_execution", "visualization", "integration_tests"],
+          "next_steps": ["Documentation", "Deployment", "Monitoring setup"]
+        }
+      },
+      "simulate": {
+        "min_seconds": 2,
+        "max_seconds": 4
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "analyze_requirements",
+      "to": "design_architecture",
+      "label": "start design"
+    },
+    {
+      "from": "analyze_requirements",
+      "to": "implement_parallel",
+      "label": "start parallel implementation"
+    },
+    {
+      "from": "analyze_requirements",
+      "to": "implement_visualization",
+      "label": "start visualization implementation"
+    },
+    {
+      "from": "design_architecture",
+      "to": "design_review_gate",
+      "label": "submit for review"
+    },
+    {
+      "from": "design_review_gate",
+      "to": "implement_core",
+      "when": "visits.design_review_gate < 2",
+      "label": "proceed with implementation"
+    },
+    {
+      "from": "design_review_gate",
+      "to": "implement_core",
+      "when": "visits.design_review_gate >= 2",
+      "label": "design approved, implement"
+    },
+    {
+      "from": "implement_core",
+      "to": "integration_test",
+      "label": "ready for integration"
+    },
+    {
+      "from": "implement_parallel",
+      "to": "integration_test",
+      "label": "ready for integration"
+    },
+    {
+      "from": "implement_visualization",
+      "to": "integration_test",
+      "label": "ready for integration"
+    },
+    {
+      "from": "integration_test",
+      "to": "test_review_gate",
+      "label": "submit test results"
+    },
+    {
+      "from": "test_review_gate",
+      "to": "fix_issues",
+      "when": "visits.test_review_gate < 2",
+      "label": "needs fixes"
+    },
+    {
+      "from": "fix_issues",
+      "to": "integration_test",
+      "label": "retest after fixes"
+    },
+    {
+      "from": "test_review_gate",
+      "to": "final_validation",
+      "when": "visits.test_review_gate >= 2",
+      "label": "tests passed"
+    }
+  ]
+}

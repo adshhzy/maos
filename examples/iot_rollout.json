@@ -1,0 +1,13 @@
+﻿{
+  "id": "iot-rollout",
+  "name": "IoT firmware rollout DAG",
+  "input": {"firmware": "fw-7.4.2", "rings": ["canary", "regional", "global"]},
+  "nodes": [
+    {"id": "stage_firmware", "label": "Stage firmware", "operation": "emit", "simulate": {"min_seconds": 9, "max_seconds": 18}, "params": {"firmware": "$input.firmware", "rings": "$input.rings"}},
+    {"id": "canary_rollout", "label": "Canary rollout", "operation": "status", "deps": ["stage_firmware"], "simulate": {"min_seconds": 25, "max_seconds": 55}, "params": {"status": "healthy", "details": {"ring": "canary"}}},
+    {"id": "regional_rollout", "label": "Regional rollout", "operation": "status", "deps": ["canary_rollout"], "simulate": {"min_seconds": 22, "max_seconds": 48}, "params": {"status": "healthy", "details": {"ring": "regional"}}},
+    {"id": "global_rollout", "label": "Global rollout", "operation": "status", "deps": ["regional_rollout"], "simulate": {"min_seconds": 20, "max_seconds": 45}, "params": {"status": "complete", "details": {"ring": "global"}}},
+    {"id": "rollout_summary", "label": "Rollout summary", "operation": "template", "deps": ["global_rollout"], "simulate": {"min_seconds": 6, "max_seconds": 12}, "params": {"fields": {"status": "complete", "message": "Firmware ${input_firmware} rolled out"}}}
+  ]
+}
+
