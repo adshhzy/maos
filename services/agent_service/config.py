@@ -5,10 +5,25 @@ from dataclasses import dataclass
 from pathlib import Path
 
 
-DEFAULT_MULTICA_BIN = (
-    r"C:\Users\DWG\AppData\Local\Programs\@multicadesktop"
-    r"\resources\app.asar.unpacked\resources\bin\multica.exe"
-)
+def _default_multica_bin() -> str:
+    local_appdata = os.getenv("LOCALAPPDATA")
+    if local_appdata:
+        bundled = (
+            Path(local_appdata)
+            / "Programs"
+            / "@multicadesktop"
+            / "resources"
+            / "app.asar.unpacked"
+            / "resources"
+            / "bin"
+            / "multica.exe"
+        )
+        if bundled.exists():
+            return str(bundled)
+    return "multica"
+
+
+DEFAULT_MULTICA_BIN = _default_multica_bin()
 
 DEFAULT_HERMES_BIN = r"D:\dev\MAOS\AgentRuntime\hermes.cmd"
 DEFAULT_HERMES_GIT_BASH = r"D:\Program Files\Git\bin\bash.exe"

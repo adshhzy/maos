@@ -39,9 +39,20 @@ def _or_502(callable_obj, *args, **kwargs):
 
 @app.get("/health")
 def health() -> dict[str, Any]:
+    return readyz()
+
+
+@app.get("/livez")
+def livez() -> dict[str, Any]:
+    return {"ok": True, "service": "agent-service"}
+
+
+@app.get("/readyz")
+def readyz() -> dict[str, Any]:
     daemon = _or_502(multica.daemon_status)
     return {
-        "status": "ok",
+        "ok": True,
+        "service": "agent-service",
         "multica": {
             "status": daemon.get("status"),
             "server_url": daemon.get("server_url"),

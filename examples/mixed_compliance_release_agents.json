@@ -3,7 +3,7 @@
   "name": "Mixed Compliance Release Real Agents DAG",
   "input": {
     "release": "maos-2026.06-private-beta",
-    "targets": ["sandbox-api", "agent-service", "temporal-worker"],
+    "targets": ["execution-api", "agent-service", "execution-worker"],
     "policy_focus": ["security review", "test evidence", "operator documentation"]
   },
   "nodes": [
@@ -115,4 +115,3 @@
     }
   ]
 }
-

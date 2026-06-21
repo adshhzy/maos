@@ -11,6 +11,9 @@ param(
     [switch]$SkipAgentService,
     [switch]$UseExternalTemporal,
     [string]$TemporalAddress = "127.0.0.1:7233",
+    [string]$TemporalNamespace = "default",
+    [switch]$SplitWorker,
+    [switch]$Production,
     [switch]$NoTemporalUi,
     [switch]$RestartExisting,
     [string]$MulticaBin = "",
@@ -81,6 +84,10 @@ Write-Step "Preparing directories"
 New-Item -ItemType Directory -Force -Path $DataDir | Out-Null
 New-Item -ItemType Directory -Force -Path $LogDir | Out-Null
 
+if ($Production -and -not $UseExternalTemporal) {
+    throw "-Production requires -UseExternalTemporal and a reachable -TemporalAddress."
+}
+
 Write-Step "Checking ports"
 Assert-PortAvailable $SandboxPort
 Assert-PortAvailable $SimulatorPort
@@ -136,9 +143,12 @@ $env:AGENT_SERVICE_API_BASE = "http://${HostName}:$AgentServicePort"
 $env:SIMULATOR_API_BASE = "http://${HostName}:$SimulatorPort"
 $env:SANDBOX_API_BASE = "http://${HostName}:$SandboxPort"
 $env:A2A_INVOCATION_REGISTRY_FILE = $A2ARegistryFile
+if ($Production) {
+    $env:PRODUCTION_MODE = "1"
+}
 
 if (-not $SkipAgentService) {
-    Write-Step "Starting Agent Service"
+    Write-Step "Starting agent-service"
     Start-Process `
         -FilePath $VenvPython `
         -ArgumentList @("-m", "uvicorn", "services.agent_service.main:app", "--host", $HostName, "--port", "$AgentServicePort") `
@@ -148,13 +158,18 @@ if (-not $SkipAgentService) {
         -WindowStyle Hidden
 }
 
-Write-Step "Starting Sandbox, Simulator, Temporal worker, and Temporal server"
+if ($SplitWorker) {
+    Write-Step "Starting execution-api, agent-simulator, and temporal-server"
+} else {
+    Write-Step "Starting execution-api, agent-simulator, execution-worker, and temporal-server"
+}
 $sandboxArgs = @(
     "sandbox_service.py",
     "--host", $HostName,
     "--port", "$SandboxPort",
     "--simulator-host", $HostName,
-    "--simulator-port", "$SimulatorPort"
+    "--simulator-port", "$SimulatorPort",
+    "--temporal-namespace", $TemporalNamespace
 )
 if ($UseExternalTemporal) {
     $sandboxArgs += @("--temporal-address", $TemporalAddress)
@@ -169,6 +184,12 @@ if ($UseExternalTemporal) {
         $sandboxArgs += "--no-temporal-ui"
     }
 }
+if ($SplitWorker) {
+    $sandboxArgs += "--no-worker"
+}
+if ($Production) {
+    $sandboxArgs += "--production"
+}
 
 Start-Process `
     -FilePath $VenvPython `
@@ -180,16 +201,39 @@ Start-Process `
 
 Write-Step "Health checks"
 if (-not $SkipAgentService) {
-    Wait-HttpOk "http://${HostName}:$AgentServicePort/health" "Agent Service"
+    Wait-HttpOk "http://${HostName}:$AgentServicePort/readyz" "agent-service"
 }
-Wait-HttpOk "http://${HostName}:$SandboxPort/api/health" "Sandbox"
+Wait-HttpOk "http://${HostName}:$SandboxPort/api/readyz" "execution-api"
+
+if ($SplitWorker) {
+    Write-Step "Starting execution-worker"
+    $workerTemporalAddress = $TemporalAddress
+    if (-not $UseExternalTemporal) {
+        $workerTemporalAddress = "${HostName}:$TemporalPort"
+    }
+    Start-Process `
+        -FilePath $VenvPython `
+        -ArgumentList @("execution_worker.py", "--temporal-address", $workerTemporalAddress, "--temporal-namespace", $TemporalNamespace) `
+        -WorkingDirectory $ProjectRoot `
+        -RedirectStandardOutput (Join-Path $LogDir "execution_worker.out.log") `
+        -RedirectStandardError (Join-Path $LogDir "execution_worker.err.log") `
+        -WindowStyle Hidden
+}
 
 Write-Step "Deployment complete"
-Write-Host "Web UI:        http://${HostName}:$SandboxPort/"
-Write-Host "Sandbox API:   http://${HostName}:$SandboxPort/api/health"
-Write-Host "Simulator API: http://${HostName}:$SimulatorPort"
+Write-Host "Web UI:          http://${HostName}:$SandboxPort/"
+Write-Host "execution-api:   http://${HostName}:$SandboxPort/api/health"
+Write-Host "agent-simulator: http://${HostName}:$SimulatorPort"
 if (-not $SkipAgentService) {
-    Write-Host "Agent Service: http://${HostName}:$AgentServicePort/health"
+    Write-Host "agent-service:   http://${HostName}:$AgentServicePort/health"
+}
+if ($SplitWorker) {
+    Write-Host "execution-worker: standalone process"
+} else {
+    Write-Host "execution-worker: embedded in execution-api"
+}
+if ($Production) {
+    Write-Host "production mode: enabled"
 }
 if (-not $UseExternalTemporal -and -not $NoTemporalUi) {
     Write-Host "Temporal UI:   http://${HostName}:$TemporalUiPort"

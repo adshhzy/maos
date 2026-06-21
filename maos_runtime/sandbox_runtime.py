@@ -47,6 +47,7 @@ class TemporalTaskService:
         temporal_ui: bool = True,
         temporal_ui_port: int = DEFAULT_TEMPORAL_UI_PORT,
         temporal_db_file: str | Path | None = DEFAULT_TEMPORAL_DB_FILE,
+        start_worker: bool = True,
     ) -> None:
         self._lock = threading.Lock()
         self._runtime_status = "starting"
@@ -63,6 +64,7 @@ class TemporalTaskService:
         self._temporal_ui = temporal_ui
         self._temporal_ui_port = temporal_ui_port
         self._temporal_db_file = None if temporal_db_file is None else Path(temporal_db_file)
+        self._start_worker = start_worker
         self._temporal_mode = "external" if temporal_address else "embedded-persistent-dev"
         self._service_started_at = time.time()
         self._show_workflow_history = _truthy_env("SANDBOX_SHOW_WORKFLOW_HISTORY")
@@ -133,13 +135,14 @@ class TemporalTaskService:
                     dev_server_database_filename=db_filename,
                 )
                 self._client = self._env.client
-            self._worker = Worker(
-                self._client,
-                task_queue=TASK_QUEUE,
-                workflows=[JsonDagWorkflow],
-                activities=ACTIVITIES,
-            )
-            await self._worker.__aenter__()
+            if self._start_worker:
+                self._worker = Worker(
+                    self._client,
+                    task_queue=TASK_QUEUE,
+                    workflows=[JsonDagWorkflow],
+                    activities=ACTIVITIES,
+                )
+                await self._worker.__aenter__()
             with self._lock:
                 self._runtime_status = "ready"
         except Exception as exc:
@@ -355,6 +358,7 @@ class TemporalTaskService:
             "ui": self._temporal_ui if self._temporal_mode != "external" else None,
             "ui_port": self._temporal_ui_port if self._temporal_ui else None,
             "task_queue": TASK_QUEUE,
+            "worker": "embedded" if self._start_worker else "external",
         }
 
 

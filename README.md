@@ -60,9 +60,9 @@ This starts two local HTTP microservices and an embedded persistent Temporal
 dev server:
 
 ```text
-Sandbox API + Web UI: http://127.0.0.1:8765
-Simulator API:        http://127.0.0.1:8767
-Temporal Server:      127.0.0.1:7233
+execution-api + Web UI: http://127.0.0.1:8765
+agent-simulator:        http://127.0.0.1:8767
+temporal-server:        127.0.0.1:7233
 Temporal UI:          http://127.0.0.1:8233
 Temporal DB file:     D:\dev\MAOS\temporal-data\temporal.db
 ```
@@ -71,21 +71,35 @@ The sandbox can also connect to the already running Multica Agent Service
 facade:
 
 ```text
-Agent Service API:    http://127.0.0.1:8091
+agent-service:        http://127.0.0.1:8091
 ```
 
-The Multica Agent Service facade now lives inside this repository. Start it
+The Multica `agent-service` facade now lives inside this repository. Start it
 from this project when real Multica nodes are needed:
 
 ```powershell
 cd D:\dev\MAOS\temporal_execution_core
-.\.venv\Scripts\python.exe -m uvicorn services.agent_service.main:app --host 127.0.0.1 --port 8091
+.\scripts\start_multica_service.ps1 -InstallDependencies
 ```
 
 Override the service URL if needed:
 
 ```powershell
 $env:AGENT_SERVICE_API_BASE = "http://127.0.0.1:8091"
+```
+
+The same service can be started directly without the helper script:
+
+```powershell
+.\.venv\Scripts\python.exe -m services.agent_service --host 127.0.0.1 --port 8091
+```
+
+Useful Multica facade configuration:
+
+```powershell
+$env:MULTICA_BIN = "C:\path\to\multica.exe"
+$env:MULTICA_PROFILE = "desktop-api.multica.ai"
+$env:MULTICA_WORKSPACE_ID = "<workspace-id>"
 ```
 
 By default the sandbox starts an embedded Temporal dev server with a persistent
@@ -119,6 +133,30 @@ embedded dev server:
 .\.venv\Scripts\python.exe sandbox_service.py `
   --temporal-address 127.0.0.1:7233
 ```
+
+To run `execution-worker` as a separate process, start the API without its
+embedded worker:
+
+```powershell
+.\.venv\Scripts\python.exe sandbox_service.py `
+  --temporal-address 127.0.0.1:7233 `
+  --temporal-namespace default `
+  --no-worker `
+  --production
+```
+
+Then start the standalone worker:
+
+```powershell
+.\.venv\Scripts\python.exe execution_worker.py `
+  --temporal-address 127.0.0.1:7233 `
+  --temporal-namespace default
+```
+
+Production mode requires `--temporal-address` so the embedded Temporal dev
+server cannot be started accidentally. The service exposes `/api/livez` for
+process liveness and `/api/readyz` for dependency readiness; `/api/health`
+remains available for compatibility.
 
 The web UI draws each control-flow graph as an SVG graph, colors nodes by
 execution status, shows dependency/control edges, lets you select a node for
@@ -192,6 +230,8 @@ Health:
 
 ```http
 GET /api/health
+GET /api/livez
+GET /api/readyz
 ```
 
 The simulator is also a microservice:
@@ -424,7 +464,9 @@ Temporal workflow visibility and, only when refreshed, queries each workflow's
 - `simulator/` contains the random-duration simulator microservice and backend helpers.
 - `services/sandbox_service.py` wires together the Web API/UI, Temporal runtime manager,
   and simulator service. Root `sandbox_service.py` is a compatibility entrypoint.
-- `services/agent_service/` contains the Multica Agent Service facade used by
+- `services/execution_worker.py` runs the standalone Temporal `execution-worker`.
+  Root `execution_worker.py` is a compatibility entrypoint.
+- `services/agent_service/` contains the Multica `agent-service` facade used by
   real Agent backends.
 - `scripts/` contains CLI helpers such as `run_dag.py`, `visualize_execution.py`,
   and the simple Temporal greeting example.

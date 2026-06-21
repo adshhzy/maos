@@ -1,17 +1,11 @@
-"""兼容入口：启动 Multica 适配微服务。
+"""Compatibility entrypoint for the Multica Agent Service facade.
 
-推荐新命令：
-    python -m uvicorn services.agent_service.main:app --host 127.0.0.1 --port 8091
+Recommended command:
+    python -m services.agent_service --host 127.0.0.1 --port 8091
 """
 
-import uvicorn
+from services.agent_service.__main__ import main
 
 
 if __name__ == "__main__":
-    uvicorn.run(
-        "services.agent_service.main:app",
-        host="127.0.0.1",
-        port=8091,
-        reload=False,
-    )
-
+    main()

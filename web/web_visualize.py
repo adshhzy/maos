@@ -75,24 +75,13 @@ def make_handler(
                     return
                 self._send_json(load_graph(example_path))
                 return
-            if parsed.path in {"/health", "/api/health"}:
-                runtime_info = (
-                    manager.runtime_info()
-                    if hasattr(manager, "runtime_info")
-                    else {"runtime_status": "unknown"}
-                )
-                self._send_json(
-                    {
-                        "ok": True,
-                        "service": "persistent-execution-sandbox",
-                        "simulator": simulator_url,
-                        "agent_service": os.environ.get(
-                            "AGENT_SERVICE_API_BASE",
-                            "http://127.0.0.1:8091",
-                        ),
-                        "runtime": runtime_info,
-                    }
-                )
+            if parsed.path in {"/livez", "/api/livez"}:
+                self._send_json({"ok": True, "service": "execution-api"})
+                return
+            if parsed.path in {"/health", "/api/health", "/readyz", "/api/readyz"}:
+                health = _health_payload(manager, simulator_url)
+                ready = health["runtime"].get("runtime_status") in {"ready", "running"}
+                self._send_json(health, status=200 if ready else 503)
                 return
             if parsed.path == "/favicon.ico":
                 self.send_response(204)
@@ -151,6 +140,25 @@ def make_handler(
     return Handler
 
 
+def _health_payload(manager: Any, simulator_url: str) -> dict[str, Any]:
+    runtime_info = (
+        manager.runtime_info()
+        if hasattr(manager, "runtime_info")
+        else {"runtime_status": "unknown"}
+    )
+    ready = runtime_info.get("runtime_status") in {"ready", "running"}
+    return {
+        "ok": ready,
+        "service": "execution-api",
+        "simulator": simulator_url,
+        "agent_service": os.environ.get(
+            "AGENT_SERVICE_API_BASE",
+            "http://127.0.0.1:8091",
+        ),
+        "runtime": runtime_info,
+    }
+
+
 def load_graph(path: Path) -> dict[str, Any]:
     with path.open("r", encoding="utf-8") as graph_file:
         return json.load(graph_file)
@@ -187,4 +195,3 @@ def start_web_server(
         (host, port),
         make_handler(manager, examples_dir, simulator_url),
     )
-

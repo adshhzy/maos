@@ -19,6 +19,11 @@ DEFAULT_SIMULATOR_HOST = "127.0.0.1"
 DEFAULT_SIMULATOR_PORT = 8767
 
 
+def _truthy_env(name: str) -> bool:
+    value = os.environ.get(name, "")
+    return value.lower() in {"1", "true", "yes", "on"}
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Run the persistent execution sandbox service"
@@ -45,7 +50,27 @@ def main() -> None:
         help="SQLite DB file for the embedded persistent Temporal dev server.",
     )
     parser.add_argument("--no-temporal-ui", action="store_true")
+    parser.add_argument(
+        "--no-worker",
+        action="store_true",
+        help=(
+            "Run only execution-api and connect to Temporal without starting "
+            "the embedded execution-worker. Start execution_worker.py separately."
+        ),
+    )
+    parser.add_argument(
+        "--production",
+        action="store_true",
+        help=(
+            "Enable production guardrails. Requires --temporal-address so the "
+            "embedded Temporal dev server is not started accidentally."
+        ),
+    )
     args = parser.parse_args()
+    production = args.production or _truthy_env("PRODUCTION_MODE")
+    if production and not args.temporal_address:
+        parser.error("--production requires --temporal-address")
+
     simulator_url = f"http://{args.simulator_host}:{args.simulator_port}"
     sandbox_url = f"http://{args.host}:{args.port}"
     os.environ["SIMULATOR_API_BASE"] = simulator_url
@@ -63,6 +88,7 @@ def main() -> None:
         temporal_ui=not args.no_temporal_ui,
         temporal_ui_port=args.temporal_ui_port,
         temporal_db_file=args.temporal_db_file,
+        start_worker=not args.no_worker,
     )
     web_server = start_web_server(
         host=args.host,
@@ -73,6 +99,8 @@ def main() -> None:
     )
 
     print(f"Persistent execution sandbox running at {sandbox_url}")
+    if production:
+        print("production mode: enabled")
     if args.temporal_address:
         print(f"Temporal server: external {args.temporal_address}")
     else:
@@ -87,6 +115,10 @@ def main() -> None:
         "Simulator microservice running at "
         f"{simulator_url}"
     )
+    if args.no_worker:
+        print("execution-worker: external process expected")
+    else:
+        print("execution-worker: embedded in execution-api process")
     print("Press Ctrl+C to stop.")
     try:
         web_server.serve_forever()

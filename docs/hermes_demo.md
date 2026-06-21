@@ -11,7 +11,7 @@ print("1. OVERVIEW")
 print("=" * 50)
 print("The MAOS Direct Hermes Agent Node is a runtime adapter that executes")
 print("control-flow graph nodes using the local Hermes CLI directly, bypassing")
-print("the Multica Agent Service facade.")
+print("the Multica agent-service facade.")
 print()
 
 print("2. KEY FEATURES")

@@ -105,7 +105,7 @@
         "status": "in_progress",
         "priority": "medium",
         "poll_seconds": 30,
-        "prompt": "Implement backend integration for mixed agent support. Integrate: 1) Simulator backend for testing, 2) Hermes direct execution, 3) Multica Agent Service facade. Handle A2A data transfer between different backends. Output JSON with fields: integration_status, apis_implemented, configuration_required, and testing_coverage. After completing, add result as Multica comment and update task status to in_review."
+        "prompt": "Implement backend integration for mixed agent support. Integrate: 1) Simulator backend for testing, 2) Hermes direct execution, 3) Multica agent-service facade. Handle A2A data transfer between different backends. Output JSON with fields: integration_status, apis_implemented, configuration_required, and testing_coverage. After completing, add result as Multica comment and update task status to in_review."
       },
       "timeout_seconds": 7200
     },

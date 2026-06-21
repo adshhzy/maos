@@ -11,16 +11,16 @@ Browser
   |
   | http://127.0.0.1:8765
   v
-Sandbox API + Web UI
+execution-api + Web UI
   |
   | starts / connects
   v
-Temporal Server + Worker
+temporal-server + execution-worker
   |
   | activity dispatch / signal wakeup
-  +---------------------> Simulator API
+  +---------------------> agent-simulator
   |
-  +---------------------> Agent Service facade
+  +---------------------> agent-service facade
                            |
                            +--> Multica daemon / Multica CLI
                            +--> Hermes runtime
@@ -30,20 +30,20 @@ Temporal Server + Worker
 
 ### 2.1 必需服务
 
-| 服务 | 默认地址 | 作用 | 启动方式 |
+| 服务名 | 默认地址 | 作用 | 启动方式 |
 | --- | --- | --- | --- |
-| Sandbox API + Web UI | `http://127.0.0.1:8765` | 创建任务图、查询状态、Web 看板、向 workflow 发 signal | `python sandbox_service.py` |
-| Temporal Server | `127.0.0.1:7233` | 持久 workflow、长等待、重试、查询历史 | 默认由 Sandbox 内嵌启动 |
-| Temporal Worker | 与 Sandbox 同进程 | 执行 `JsonDagWorkflow` 和 activity | Sandbox 内部启动 |
-| Simulator API | `http://127.0.0.1:8767` | 模拟 Agent 执行，供测试和混合图使用 | Sandbox 内部启动 |
+| `execution-api` | `http://127.0.0.1:8765` | 创建任务图、查询状态、Web 看板、向 workflow 发 signal | `python sandbox_service.py` |
+| `temporal-server` | `127.0.0.1:7233` | 持久 workflow、长等待、重试、查询历史 | 默认由 `execution-api` 内嵌启动 |
+| `execution-worker` | 与 `execution-api` 同进程 | 执行 `JsonDagWorkflow` 和 activity | `execution-api` 内部启动 |
+| `agent-simulator` | `http://127.0.0.1:8767` | 模拟 Agent 执行，供测试和混合图使用 | `execution-api` 内部启动 |
 
 只运行 simulator 任务图时，上面这些已经足够。
 
 ### 2.2 完整真实 Agent 功能需要的服务
 
-| 服务 | 默认地址/路径 | 作用 |
+| 服务名 | 默认地址/路径 | 作用 |
 | --- | --- | --- |
-| Agent Service facade | `http://127.0.0.1:8091` | 把 MAOS 节点请求转成 Multica/Hermes 任务，提供状态与 trace 查询 |
+| `agent-service` | `http://127.0.0.1:8091` | 把编排节点请求转成 Multica/Hermes 任务，提供状态与 trace 查询 |
 | Multica daemon / CLI | 由 `MULTICA_BIN` 指定 | 真实 Multica Agent 任务创建、状态查询、评论、运行消息 |
 | Hermes runtime | 由 `HERMES_BIN` 指定 | 直连 Hermes 节点执行 |
 
@@ -53,9 +53,9 @@ Temporal Server + Worker
 
 | 项目 | 默认值 |
 | --- | --- |
-| Web / Sandbox | `8765` |
-| Simulator | `8767` |
-| Agent Service | `8091` |
+| `execution-api` | `8765` |
+| `agent-simulator` | `8767` |
+| `agent-service` | `8091` |
 | Temporal gRPC | `7233` |
 | Temporal UI | `8233` |
 | Temporal DB | `D:\dev\MAOS\temporal-data\temporal.db` |
@@ -116,6 +116,26 @@ powershell -ExecutionPolicy Bypass -File .\scripts\deploy_windows.ps1
 powershell -ExecutionPolicy Bypass -File .\scripts\deploy_windows.ps1 -SkipAgentService
 ```
 
+将 `execution-worker` 从 `execution-api` 中拆成独立进程启动：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\deploy_windows.ps1 `
+  -SkipAgentService `
+  -SplitWorker
+```
+
+生产模式要求连接外部 `temporal-server`，避免误启内嵌 dev server：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\deploy_windows.ps1 `
+  -SkipAgentService `
+  -UseExternalTemporal `
+  -TemporalAddress "10.0.0.10:7233" `
+  -TemporalNamespace "maos" `
+  -SplitWorker `
+  -Production
+```
+
 指定真实 Agent 运行时路径：
 
 ```powershell
@@ -145,6 +165,24 @@ bash scripts/deploy_unix.sh
 SKIP_AGENT_SERVICE=1 bash scripts/deploy_unix.sh
 ```
 
+将 `execution-worker` 从 `execution-api` 中拆成独立进程启动：
+
+```bash
+SKIP_AGENT_SERVICE=1 SPLIT_WORKER=1 bash scripts/deploy_unix.sh
+```
+
+生产模式要求连接外部 `temporal-server`：
+
+```bash
+SKIP_AGENT_SERVICE=1 \
+USE_EXTERNAL_TEMPORAL=1 \
+TEMPORAL_ADDRESS=10.0.0.10:7233 \
+TEMPORAL_NAMESPACE=maos \
+SPLIT_WORKER=1 \
+PRODUCTION_MODE=1 \
+bash scripts/deploy_unix.sh
+```
+
 ## 7. 手动部署命令
 
 ```powershell
@@ -154,13 +192,13 @@ python -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r requirements.txt
 ```
 
-启动 Agent Service：
+启动 `agent-service`：
 
 ```powershell
 .\.venv\Scripts\python.exe -m uvicorn services.agent_service.main:app --host 127.0.0.1 --port 8091
 ```
 
-启动 Sandbox、Simulator 和内嵌持久 Temporal：
+启动 `execution-api`、`agent-simulator` 和内嵌持久 `temporal-server`：
 
 ```powershell
 .\.venv\Scripts\python.exe sandbox_service.py `
@@ -174,25 +212,68 @@ python -m venv .venv
   --temporal-db-file D:\dev\MAOS\temporal-data\temporal.db
 ```
 
+如需让 `execution-worker` 独立运行，先启动不内嵌 worker 的 `execution-api`：
+
+```powershell
+.\.venv\Scripts\python.exe sandbox_service.py `
+  --host 127.0.0.1 `
+  --port 8765 `
+  --simulator-host 127.0.0.1 `
+  --simulator-port 8767 `
+  --temporal-host 127.0.0.1 `
+  --temporal-port 7233 `
+  --temporal-ui-port 8233 `
+  --temporal-db-file D:\dev\MAOS\temporal-data\temporal.db `
+  --no-worker
+```
+
+再启动独立 `execution-worker`：
+
+```powershell
+.\.venv\Scripts\python.exe execution_worker.py `
+  --temporal-address 127.0.0.1:7233 `
+  --temporal-namespace default
+```
+
 ## 8. 使用外部 Temporal Server
 
-内嵌 Temporal dev server 适合本地开发和单机验证。更稳定的部署方式是单独部署 Temporal Server，然后让 Sandbox 连接它：
+内嵌 Temporal dev server 适合本地开发和单机验证。更稳定的部署方式是单独部署 `temporal-server`，然后让 `execution-api` 连接它：
 
 ```powershell
 .\.venv\Scripts\python.exe sandbox_service.py --temporal-address 127.0.0.1:7233
 ```
 
-采用外部 Temporal 时，需要独立维护 Temporal Server、数据库、备份、监控和 UI。
+外部 `temporal-server` + 独立 `execution-worker` 的推荐组合：
+
+```powershell
+.\.venv\Scripts\python.exe sandbox_service.py `
+  --temporal-address 127.0.0.1:7233 `
+  --temporal-namespace default `
+  --no-worker `
+  --production
+
+.\.venv\Scripts\python.exe execution_worker.py `
+  --temporal-address 127.0.0.1:7233 `
+  --temporal-namespace default
+```
+
+采用外部 Temporal 时，需要独立维护 `temporal-server`、数据库、备份、监控和 UI。
 
 ## 9. 健康检查
 
 部署完成后访问：
 
 ```text
+http://127.0.0.1:8765/api/livez
+http://127.0.0.1:8765/api/readyz
 http://127.0.0.1:8765/api/health
+http://127.0.0.1:8091/livez
+http://127.0.0.1:8091/readyz
 http://127.0.0.1:8091/health
 http://127.0.0.1:8233
 ```
+
+`/livez` 只表示进程已启动；`/readyz` 表示运行时和关键依赖已经可用。部署脚本使用 `/readyz` 做就绪检查，`/health` 保持兼容。
 
 其中 `/api/health` 应看到：
 
@@ -226,7 +307,7 @@ http://127.0.0.1:8765/
 .\.venv\Scripts\python.exe run_dag.py examples\order_processing.json
 ```
 
-如果真实 Agent Service 未部署，请优先使用 simulator 示例，例如 `order_processing.json`、`content_pipeline.json` 或批量 simulator 示例。
+如果真实 `agent-service` 未部署，请优先使用 simulator 示例，例如 `order_processing.json`、`content_pipeline.json` 或批量 simulator 示例。
 
 ## 11. 常见问题
 
@@ -234,7 +315,7 @@ http://127.0.0.1:8765/
 
 检查 `7233` 是否被占用；如果被旧进程占用，换端口或用部署脚本的 `-RestartExisting`。
 
-### 11.2 Agent Service `/health` 失败
+### 11.2 `agent-service` `/health` 失败
 
 通常是 Multica daemon 未启动、未登录、`MULTICA_BIN` 路径不正确，或 `MULTICA_WORKSPACE_ID` 不匹配。
 
@@ -248,8 +329,8 @@ http://127.0.0.1:8765/
 
 ## 12. 生产化建议
 
-- 用外部 Temporal Server 替代内嵌 dev server。
+- 用外部 `temporal-server` 替代内嵌 dev server。
 - 用进程管理器托管服务，例如 Windows Task Scheduler、NSSM、systemd 或 Docker。
 - 将 `Temporal DB`、`A2A_INVOCATION_REGISTRY_FILE` 和服务日志放到专门的数据目录。
-- 对 Agent Service、Sandbox API 加认证和反向代理，不要直接暴露到公网。
+- 对 `agent-service`、`execution-api` 加认证和反向代理，不要直接暴露到公网。
 - 为大规模并发配置真实 Temporal 集群、数据库、指标监控和日志采集。
