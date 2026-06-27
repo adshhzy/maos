@@ -39,7 +39,7 @@
         "status": "in_progress",
         "priority": "medium",
         "poll_seconds": 30,
-        "prompt": "Use only the A2A payload. Write the product argument for or against versioned graph template APIs. Include users, value, adoption risks, pricing/packaging implications, and success metrics. Add the final result as a Multica comment and move the task to in_review or done."
+        "prompt": "Use only the task input and upstream node results. Write the product argument for or against versioned graph template APIs. Include users, value, adoption risks, pricing/packaging implications, and success metrics. Add the final result as a Multica comment and move the task to in_review or done."
       },
       "timeout_seconds": 7200
     },
@@ -57,7 +57,7 @@
         "status": "in_progress",
         "priority": "medium",
         "poll_seconds": 30,
-        "prompt": "Use only the A2A payload. Write the architecture argument for versioned graph template APIs. Include schema compatibility, migration, validation, Temporal replay constraints, security, and operational concerns. Add the final result as a Multica comment and move the task to in_review or done."
+        "prompt": "Use only the task input and upstream node results. Write the architecture argument for versioned graph template APIs. Include schema compatibility, migration, validation, Temporal replay constraints, security, and operational concerns. Add the final result as a Multica comment and move the task to in_review or done."
       },
       "timeout_seconds": 7200
     },
@@ -128,7 +128,7 @@
         "status": "in_progress",
         "priority": "medium",
         "poll_seconds": 30,
-        "prompt": "Use only the A2A payload. Produce a concise decision memo with recommendation, rationale, alternatives, risks, rollout plan, and open questions. Add the final result as a Multica comment and move the task to in_review or done."
+        "prompt": "Use only the task input and upstream node results. Produce a concise decision memo with recommendation, rationale, alternatives, risks, rollout plan, and open questions. Add the final result as a Multica comment and move the task to in_review or done."
       },
       "timeout_seconds": 7200
     },

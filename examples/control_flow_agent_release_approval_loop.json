@@ -39,7 +39,7 @@
         "status": "in_progress",
         "priority": "medium",
         "poll_seconds": 30,
-        "prompt": "Use only the A2A payload. Produce a product release plan with target users, staged rollout, success metrics, known risks, and explicit go/no-go criteria. Add the final result as a Multica comment and move the task to in_review or done."
+        "prompt": "Use only the task input and upstream node results. Produce a product release plan with target users, staged rollout, success metrics, known risks, and explicit go/no-go criteria. Add the final result as a Multica comment and move the task to in_review or done."
       },
       "timeout_seconds": 7200
     },
@@ -59,7 +59,7 @@
         "status": "in_progress",
         "priority": "high",
         "poll_seconds": 30,
-        "prompt": "Use only the A2A payload. Review release readiness and produce a checklist with blockers, tests, manual validation, and a pass/fail recommendation. On a second pass, incorporate remediation notes. Add the final result as a Multica comment and move the task to in_review or done."
+        "prompt": "Use only the task input and upstream node results. Review release readiness and produce a checklist with blockers, tests, manual validation, and a pass/fail recommendation. On a second pass, incorporate remediation notes. Add the final result as a Multica comment and move the task to in_review or done."
       },
       "timeout_seconds": 7200
     },
@@ -109,7 +109,7 @@
         "status": "in_progress",
         "priority": "medium",
         "poll_seconds": 30,
-        "prompt": "Use only the A2A payload. Draft concise internal release notes explaining what changed, how to validate branch/loop graphs, known limitations, and rollout instructions. Add the final result as a Multica comment and move the task to in_review or done."
+        "prompt": "Use only the task input and upstream node results. Draft concise internal release notes explaining what changed, how to validate branch/loop graphs, known limitations, and rollout instructions. Add the final result as a Multica comment and move the task to in_review or done."
       },
       "timeout_seconds": 7200
     },

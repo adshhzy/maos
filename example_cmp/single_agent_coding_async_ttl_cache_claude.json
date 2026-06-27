@@ -1,0 +1,37 @@
+{
+  "id": "single-agent-coding-async-ttl-cache-claude",
+  "name": "单 Claude 编码基线 - AsyncTTLCache 小库实现",
+  "graph_type": "dag",
+  "input": {
+    "task": "请实现一个可复用的 Python 小库 `maos_cache.py`，提供一个生产可用的 `AsyncTTLCache` 与装饰器能力。要求：1. 支持同步函数和异步函数的缓存装饰器；2. 支持 TTL 过期、maxsize LRU 淘汰、手动 clear/invalidate；3. 对同一个 key 的并发异步调用要做 single-flight 去重，避免重复执行底层函数；4. 异常结果不能被缓存；5. 提供 cache_info 统计：hits、misses、evictions、inflight、size；6. 使用标准库实现，不依赖第三方库；7. 给出完整代码、pytest 风格测试代码、关键设计说明和使用示例。"
+  },
+  "nodes": [
+    {
+      "id": "single_coding_agent",
+      "label": "单Agent完成完整编码任务",
+      "operation": "agent_task",
+      "agent": {
+        "backend": "claude",
+        "agent_key": "coding",
+        "context_policy": "provided_context_only",
+        "runtime_profile": "claude_print",
+        "execution_mode": "claude_print",
+        "poll_seconds": 30,
+        "timeout_seconds": 3600,
+        "artifact_transfer_mode": "inline",
+        "result_text_limit": 20000,
+        "prompt_payload_limit": 32000,
+        "bare": true,
+        "prompt": "你是资深 Python 工程师。请独立完成整个编码任务：输出 `maos_cache.py` 完整代码、pytest 测试代码、设计说明和使用示例。请特别注意并发 single-flight、TTL+LRU 交互、异常不缓存、同步/异步装饰器一致性。用中文说明，代码块必须完整可复制。"
+      },
+      "timeout_seconds": 3900
+    }
+  ],
+  "edges": [],
+  "description": "单 Agent 基线：把完整编码任务一次性交给 Claude 完成，用于与多 Agent 编排版本比较质量。",
+  "metadata": {
+    "comparison_group": "coding_async_ttl_cache",
+    "comparison_role": "single_agent_baseline",
+    "backend_variant": "claude"
+  }
+}

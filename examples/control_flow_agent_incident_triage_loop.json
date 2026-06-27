@@ -47,7 +47,7 @@
         "status": "in_progress",
         "priority": "high",
         "poll_seconds": 30,
-        "prompt": "Use only the A2A payload. Diagnose the incident from an architecture and orchestration perspective. Include likely causes, missing evidence, mitigation sequence, and which signals should be monitored. Add the final result as a Multica comment and move the task to in_review or done."
+        "prompt": "Use only the task input and upstream node results. Diagnose the incident from an architecture and orchestration perspective. Include likely causes, missing evidence, mitigation sequence, and which signals should be monitored. Add the final result as a Multica comment and move the task to in_review or done."
       },
       "timeout_seconds": 7200
     },
@@ -98,7 +98,7 @@
         "status": "in_progress",
         "priority": "high",
         "poll_seconds": 30,
-        "prompt": "Use only the A2A payload. Produce an operational response plan with immediate mitigation, validation commands, rollback criteria, owner handoffs, and follow-up checks. Add the final result as a Multica comment and move the task to in_review or done."
+        "prompt": "Use only the task input and upstream node results. Produce an operational response plan with immediate mitigation, validation commands, rollback criteria, owner handoffs, and follow-up checks. Add the final result as a Multica comment and move the task to in_review or done."
       },
       "timeout_seconds": 7200
     },

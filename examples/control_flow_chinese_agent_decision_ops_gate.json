@@ -43,7 +43,7 @@
         "status": "in_progress",
         "priority": "high",
         "poll_seconds": 30,
-        "prompt": "请只基于A2A payload，生成中文生产压测和运维接入Runbook。若看到ops_review_gate中的needs_revision评审意见，请合并其reason和required_changes重新生成Runbook。完成后把结果作为Multica评论提交，并将任务状态更新为in_review或done。"
+        "prompt": "请只基于任务输入和上游节点结果，生成中文生产压测和运维接入Runbook。若看到ops_review_gate中的needs_revision评审意见，请合并其reason和required_changes重新生成Runbook。完成后把结果作为Multica评论提交，并将任务状态更新为in_review或done。"
       },
       "timeout_seconds": 7200
     },
@@ -65,7 +65,7 @@
         "status": "in_progress",
         "priority": "high",
         "poll_seconds": 30,
-        "prompt": "你是真实Agent运维评审门。请只基于A2A payload判断ops_runbook是否可执行。最终评论末尾必须输出独立JSON代码块：{\"decision\":\"needs_revision或approved\",\"reason\":\"中文原因\",\"required_changes\":[\"修改项；没有则输出空数组\"],\"confidence\":0.0到1.0}。如果缺少监控、回滚、负责人、验证命令或失败处理，请输出needs_revision；否则输出approved。完成后把结果作为Multica评论提交，并将任务状态更新为in_review或done。"
+        "prompt": "你是真实Agent运维评审门。请只基于任务输入和上游节点结果判断ops_runbook是否可执行。最终评论末尾必须输出独立JSON代码块：{\"decision\":\"needs_revision或approved\",\"reason\":\"中文原因\",\"required_changes\":[\"修改项；没有则输出空数组\"],\"confidence\":0.0到1.0}。如果缺少监控、回滚、负责人、验证命令或失败处理，请输出needs_revision；否则输出approved。完成后把结果作为Multica评论提交，并将任务状态更新为in_review或done。"
       },
       "timeout_seconds": 7200
     },

@@ -1,0 +1,36 @@
+{
+  "id": "single-agent-competitor-updates-10-cn-codex",
+  "name": "单智能体基线示例 - Codex - 10家多Agent竞品近6个月动态调研",
+  "graph_type": "dag",
+  "input": {
+    "task": "帮我调研10家多Agent竞品最近6个月的产品更新、价格变化、客户案例和组织调整"
+  },
+  "nodes": [
+    {
+      "id": "single_generalist_competitor_report",
+      "label": "单通用Agent完整竞品调研",
+      "operation": "agent_task",
+      "agent": {
+        "backend": "codex",
+        "agent_key": "general_chat",
+        "context_policy": "provided_context_only",
+        "runtime_profile": "codex_oneshot",
+        "execution_mode": "codex_exec",
+        "poll_seconds": 30,
+        "timeout_seconds": 3600,
+        "prompt": "帮我调研10家多Agent竞品最近6个月的产品更新、价格变化、客户案例和组织调整",
+        "result_text_limit": 9000,
+        "prompt_payload_limit": 24000,
+        "artifact_transfer_mode": "ref"
+      },
+      "timeout_seconds": 4200
+    }
+  ],
+  "edges": [],
+  "description": "由 single_agent_competitor_updates_10_cn.json 复制改写，单节点通过本地 Codex CLI backend 执行。",
+  "metadata": {
+    "source_graph": "single_agent_competitor_updates_10_cn.json",
+    "backend_variant": "codex",
+    "comparison_role": "single_agent_baseline"
+  }
+}

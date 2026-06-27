@@ -1,0 +1,29 @@
+{
+  "id": "single-agent-competitor-updates-10-cn",
+  "name": "单智能体基线示例 - 10家多Agent竞品近6个月动态调研",
+  "graph_type": "dag",
+  "input": {
+    "task": "帮我调研10家多Agent竞品最近6个月的产品更新、价格变化、客户案例和组织调整"
+  },
+  "nodes": [
+    {
+      "id": "single_generalist_competitor_report",
+      "label": "单通用Agent完整竞品调研",
+      "operation": "agent_task",
+      "agent": {
+        "backend": "hermes",
+        "agent_key": "general_chat",
+        "context_policy": "provided_context_only",
+        "runtime_profile": "hermes_oneshot",
+        "execution_mode": "hermes_oneshot",
+        "poll_seconds": 30,
+        "timeout_seconds": 3600,
+        "prompt": "帮我调研10家多Agent竞品最近6个月的产品更新、价格变化、客户案例和组织调整",
+        "result_text_limit": 9000,
+        "prompt_payload_limit": 24000
+      },
+      "timeout_seconds": 4200
+    }
+  ],
+  "edges": []
+}

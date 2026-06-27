@@ -43,7 +43,7 @@
         "status": "in_progress",
         "priority": "medium",
         "poll_seconds": 30,
-        "prompt": "请只基于A2A payload，输出中文产品方案。内容包括目标用户、核心价值、关键场景、成功指标、风险和分阶段落地计划。完成后把最终结果作为Multica评论提交，并将任务状态更新为in_review或done。"
+        "prompt": "请只基于任务输入和上游节点结果，输出中文产品方案。内容包括目标用户、核心价值、关键场景、成功指标、风险和分阶段落地计划。完成后把最终结果作为Multica评论提交，并将任务状态更新为in_review或done。"
       },
       "timeout_seconds": 7200
     },
@@ -63,7 +63,7 @@
         "status": "in_progress",
         "priority": "high",
         "poll_seconds": 30,
-        "prompt": "请只基于A2A payload，输出中文架构评审。内容包括Temporal工作流边界、A2A数据传递、Agent长等待、人工回路、失败恢复、可观测性和扩展风险。第二轮如有补充约束，请合并考虑。完成后把最终结果作为Multica评论提交，并将任务状态更新为in_review或done。"
+        "prompt": "请只基于任务输入和上游节点结果，输出中文架构评审。内容包括Temporal工作流边界、节点间数据传递、Agent长等待、人工回路、失败恢复、可观测性和扩展风险。第二轮如有补充约束，请合并考虑。完成后把最终结果作为Multica评论提交，并将任务状态更新为in_review或done。"
       },
       "timeout_seconds": 7200
     },
@@ -113,7 +113,7 @@
         "status": "in_progress",
         "priority": "medium",
         "poll_seconds": 30,
-        "prompt": "请只基于A2A payload，编写中文说明文档草案，解释这个持久化多Agent编排内核的目标、控制流图JSON、分支/循环执行语义、Temporal挂起机制、A2A数据传递和Web可视化。完成后把最终结果作为Multica评论提交，并将任务状态更新为in_review或done。"
+        "prompt": "请只基于任务输入和上游节点结果，编写中文说明文档草案，解释这个持久化多Agent编排内核的目标、控制流图JSON、分支/循环执行语义、Temporal挂起机制、节点间数据传递和Web可视化。完成后把最终结果作为Multica评论提交，并将任务状态更新为in_review或done。"
       },
       "timeout_seconds": 7200
     },

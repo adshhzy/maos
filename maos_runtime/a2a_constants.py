@@ -3,6 +3,8 @@
 SIMULATOR_BACKEND = "simulator"
 MULTICA_BACKEND = "multica"
 HERMES_BACKEND = "hermes"
+CODEX_BACKEND = "codex"
+CLAUDE_BACKEND = "claude"
 
 MULTICA_COMPLETED_STATUSES = {"done", "in_review"}
 MULTICA_FAILED_STATUSES = {"blocked", "cancelled", "canceled"}

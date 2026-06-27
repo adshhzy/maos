@@ -38,7 +38,7 @@
         "execution_mode": "hermes_oneshot",
         "poll_seconds": 30,
         "timeout_seconds": 300,
-        "prompt": "请只基于 A2A Context Payload，用中文给出轻量评审结论。输出一个 JSON 对象，字段包括 decision、reason、risks，其中 decision 只能是 approved 或 needs_revision。"
+        "prompt": "请只基于任务输入和上游节点结果，用中文给出轻量评审结论。输出一个 JSON 对象，字段包括 decision、reason、risks，其中 decision 只能是 approved 或 needs_revision。"
       },
       "timeout_seconds": 900
     },

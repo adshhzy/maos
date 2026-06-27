@@ -2,7 +2,7 @@
 
 本文档说明如何把 `temporal_execution_core` 打包到另一台机器，并部署出当前项目的完整功能。
 
-当前系统由一个持久化执行沙盒微服务、一套 Temporal 执行环境、一个模拟 Agent 服务，以及可选的真实 Agent 适配服务组成。Web 界面只是沙盒 API 的浏览器客户端。
+当前系统由一个 Web UI 服务、一个 FastAPI 持久化执行沙盒 API 服务、一套 Temporal 执行环境、一个 Temporal Worker 进程、一个模拟 Agent 服务，以及可选的真实 Agent 适配服务组成。Web 界面只是沙盒 API 的浏览器客户端。开发时仍可使用 all-in-one 入口一次性启动。
 
 ## 1. 目标架构
 
@@ -11,9 +11,13 @@ Browser
   |
   | http://127.0.0.1:8765
   v
-Sandbox API + Web UI
+Web UI
   |
-  | starts / connects
+  | proxies /api/* to http://127.0.0.1:8766
+  v
+FastAPI Sandbox API
+  |
+  | connects / queries / signals
   v
 Temporal Server + Worker
   |
@@ -32,12 +36,21 @@ Temporal Server + Worker
 
 | 服务 | 默认地址 | 作用 | 启动方式 |
 | --- | --- | --- | --- |
-| Sandbox API + Web UI | `http://127.0.0.1:8765` | 创建任务图、查询状态、Web 看板、向 workflow 发 signal | `python sandbox_service.py` |
-| Temporal Server | `127.0.0.1:7233` | 持久 workflow、长等待、重试、查询历史 | 默认由 Sandbox 内嵌启动 |
-| Temporal Worker | 与 Sandbox 同进程 | 执行 `JsonDagWorkflow` 和 activity | Sandbox 内部启动 |
-| Simulator API | `http://127.0.0.1:8767` | 模拟 Agent 执行，供测试和混合图使用 | Sandbox 内部启动 |
+| Web UI | `http://127.0.0.1:8765` | Web 看板、静态页面、把 `/api/*` 代理到 Sandbox API | `python web_ui_service.py --sandbox-api-base http://127.0.0.1:8766` |
+| FastAPI Sandbox API | `http://127.0.0.1:8766` | 创建任务图、查询状态、向 workflow 发 signal、提供 OpenAPI 文档 | `python sandbox_api_service.py --port 8766 --temporal-address 127.0.0.1:7233` |
+| Temporal Server | `127.0.0.1:7233` | 持久 workflow、长等待、重试、查询历史 | `python worker_service.py` 默认内嵌启动 |
+| Temporal Worker | 无 HTTP 端口 | 执行 `JsonDagWorkflow` 和 activity | `python worker_service.py` |
+| Simulator API | `http://127.0.0.1:8767` | 模拟 Agent 执行，供测试和混合图使用 | `python simulator_service.py` |
 
 只运行 simulator 任务图时，上面这些已经足够。
+
+兼容的 all-in-one 开发入口仍然可用：
+
+```powershell
+python sandbox_service.py
+```
+
+该入口会在一个 Python 进程里启动 Sandbox API/Web、Simulator、Temporal dev server 和 Temporal Worker。
 
 ### 2.2 完整真实 Agent 功能需要的服务
 
@@ -53,7 +66,8 @@ Temporal Server + Worker
 
 | 项目 | 默认值 |
 | --- | --- |
-| Web / Sandbox | `8765` |
+| Web UI | `8765` |
+| Sandbox API | `8766` |
 | Simulator | `8767` |
 | Agent Service | `8091` |
 | Temporal gRPC | `7233` |

@@ -1,0 +1,30 @@
+{
+  "id": "direct_codex_cli_agent_cn",
+  "title": "直连 Codex CLI Agent 示例 - 中文任务拆解",
+  "type": "dag",
+  "input": {
+    "task": "请为一个持久化多 Agent 编排内核设计一组最小可行的验收测试，覆盖任务图解析、Agent 节点执行、失败重试、人工介入和最终结果汇总。"
+  },
+  "nodes": [
+    {
+      "id": "codex_test_design",
+      "label": "Codex CLI 设计验收测试",
+      "operation": "agent_task",
+      "agent": {
+        "backend": "codex",
+        "agent_key": "codex_cli",
+        "context_policy": "provided_context_only",
+        "runtime_profile": "codex_exec",
+        "execution_mode": "codex_exec",
+        "sandbox": "read-only",
+        "approval_policy": "never",
+        "workdir": "D:\\dev\\MAOS\\temporal_execution_core",
+        "timeout_seconds": 900,
+        "prompt": "你是一个测试架构 Agent。请只基于任务输入，输出中文 Markdown 验收测试方案。不要修改文件，不要运行命令。内容包括：1) 测试目标；2) 关键场景；3) 每个场景的前置条件、步骤和期望结果；4) 风险和补充建议。",
+        "result_text_limit": 9000,
+        "prompt_payload_limit": 24000
+      },
+      "timeout_seconds": 1200
+    }
+  ]
+}

@@ -60,12 +60,40 @@ This starts two local HTTP microservices and an embedded persistent Temporal
 dev server:
 
 ```text
-Sandbox API + Web UI: http://127.0.0.1:8765
+Web UI:              http://127.0.0.1:8765
+Sandbox API:         http://127.0.0.1:8766
+Sandbox API docs:    http://127.0.0.1:8766/docs
 Simulator API:        http://127.0.0.1:8767
 Temporal Server:      127.0.0.1:7233
 Temporal UI:          http://127.0.0.1:8233
 Temporal DB file:     D:\dev\MAOS\temporal-data\temporal.db
 ```
+
+`sandbox_service.py` is kept as the all-in-one development entrypoint. It starts
+the Web/API process, simulator, embedded Temporal server, and Temporal worker in
+one Python process.
+
+For a split-process deployment, start the services separately:
+
+```powershell
+cd D:\dev\MAOS\temporal_execution_core
+
+# Terminal 1: Temporal server + worker
+.\.venv\Scripts\python.exe worker_service.py
+
+# Terminal 2: simulator API
+.\.venv\Scripts\python.exe simulator_service.py
+
+# Terminal 3: Sandbox API only
+.\.venv\Scripts\python.exe sandbox_api_service.py --port 8766 --temporal-address 127.0.0.1:7233
+
+# Terminal 4: Web UI only
+.\.venv\Scripts\python.exe web_ui_service.py --port 8765 --sandbox-api-base http://127.0.0.1:8766
+```
+
+In split-process mode, the Web UI is only a browser client and local API proxy.
+The FastAPI sandbox API creates workflows, queries Temporal, and sends workflow
+signals. The worker process owns workflow/activity execution.
 
 The sandbox can also connect to the already running Multica Agent Service
 facade:
@@ -323,8 +351,8 @@ Agent Service, set `agent.backend` to `multica` and choose an Agent by
 
 Multica nodes default to the requested real Multica Agent. `context_policy`
 only controls how much context is sent to the Agent; for example,
-`provided_context_only` sends the control-flow node instruction and A2A payload without
-duplicating workspace data. To make the handoff explicit, set
+`provided_context_only` sends the control-flow node instruction, original task input,
+and upstream node results without duplicating workspace data. To make the handoff explicit, set
 `execution_mode=multica` and choose `runtime_profile=codex`.
 
 ```json
@@ -360,7 +388,7 @@ runtime directly, set `agent.backend` to `hermes`:
     "runtime_profile": "hermes_oneshot",
     "execution_mode": "hermes_oneshot",
     "poll_seconds": 30,
-    "prompt": "Use only the A2A payload and return the final node result."
+    "prompt": "Use only the task input and upstream node results, then return the final node result."
   }
 }
 ```
@@ -370,7 +398,7 @@ The older compatibility path is still available through AgentService by using
 still creates a Multica task and writes the Hermes output back as a Multica
 comment, while `backend=hermes` avoids Multica task/comment/status handling.
 
-For token control, the adapter does not duplicate full A2A payloads into
+For token control, the adapter does not duplicate full structured payloads into
 Multica metadata by default. Set `agent.include_payload_metadata` to `true`
 only for debugging small payloads. Completed Multica results include recent
 comments and run summaries; raw run messages are skipped unless

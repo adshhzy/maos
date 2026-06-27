@@ -7,7 +7,7 @@
     "constraints": [
       "Use real Multica agents for strategy and architecture judgment",
       "Use simulator nodes for deterministic scoring and packaging",
-      "Keep all Agent context limited to the A2A payload"
+      "Keep all Agent context limited to the task input and upstream node results"
     ]
   },
   "nodes": [

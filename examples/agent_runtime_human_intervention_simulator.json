@@ -1,0 +1,116 @@
+{
+  "id": "agent-runtime-human-intervention-simulator",
+  "name": "运行中临时人在回路示例 - 合同条款审核",
+  "graph_type": "control_flow",
+  "max_total_visits": 8,
+  "input": {
+    "project": "企业知识库助手采购合同",
+    "vendor": "示例供应商",
+    "budget": "30万元以内",
+    "goal": "让模拟 Agent 在执行过程中临时请求人工补充约束，再继续完成合同条款摘要"
+  },
+  "start": "collect_contract_context",
+  "nodes": [
+    {
+      "id": "collect_contract_context",
+      "label": "整理合同背景",
+      "operation": "emit",
+      "params": {
+        "status": "context_ready",
+        "project": "$input.project",
+        "vendor": "$input.vendor",
+        "budget": "$input.budget",
+        "known_constraints": [
+          "必须保留数据安全条款",
+          "上线前需要业务负责人确认付款节点",
+          "不得承诺未验收即全额付款"
+        ]
+      },
+      "simulate": {
+        "min_seconds": 2,
+        "max_seconds": 4
+      }
+    },
+    {
+      "id": "draft_contract_terms_agent",
+      "label": "模拟 Agent 起草合同条款",
+      "backend": "simulator",
+      "operation": "merge",
+      "deps": [
+        "collect_contract_context"
+      ],
+      "params": {
+        "task": "根据合同背景起草付款、验收、数据安全与交付责任条款摘要",
+        "context": "$deps.collect_contract_context"
+      },
+      "simulate": {
+        "min_seconds": 8,
+        "max_seconds": 12,
+        "human_interventions": [
+          {
+            "request_id": "payment-confirmation",
+            "after_seconds": 2,
+            "prompt": "模拟 Agent 正在起草付款条款，但缺少人工确认：是否允许首付款？如果允许，请给出比例上限和触发条件。",
+            "assignee_role": "business_owner",
+            "schema": {
+              "decision": [
+                "allow_advance_payment",
+                "no_advance_payment"
+              ],
+              "advance_payment_ratio": "首付款比例，例如 20%",
+              "comment": "付款条件说明"
+            }
+          },
+          {
+            "request_id": "security-exception-review",
+            "after_seconds": 2,
+            "prompt": "模拟 Agent 发现供应商希望使用外部云存储处理验收材料，请人工判断是否允许例外，并说明必须追加的安全条件。",
+            "assignee_role": "security_reviewer",
+            "schema": {
+              "decision": [
+                "allow_with_conditions",
+                "reject_exception"
+              ],
+              "required_controls": "必须追加的安全控制",
+              "comment": "安全评审意见"
+            }
+          }
+        ]
+      },
+      "timeout_seconds": 86400
+    },
+    {
+      "id": "summarize_contract_output",
+      "label": "汇总合同输出",
+      "operation": "join",
+      "deps": [
+        "draft_contract_terms_agent"
+      ],
+      "params": {
+        "fields": {
+          "status": "ready_for_legal_review",
+          "agent_task": "$deps.draft_contract_terms_agent.params.task",
+          "payment_human_response": "$deps.draft_contract_terms_agent.human_responses.0.response",
+          "security_human_response": "$deps.draft_contract_terms_agent.human_responses.1.response",
+          "summary": "模拟 Agent 已在同一个 activity 执行过程中完成两次临时人工介入，并将人工答复作为本节点结果交给下游。"
+        }
+      },
+      "simulate": {
+        "min_seconds": 2,
+        "max_seconds": 4
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "collect_contract_context",
+      "to": "draft_contract_terms_agent",
+      "label": "合同背景传入模拟 Agent"
+    },
+    {
+      "from": "draft_contract_terms_agent",
+      "to": "summarize_contract_output",
+      "label": "Agent 带人工答复完成后汇总"
+    }
+  ]
+}

@@ -69,12 +69,12 @@
 | `label` | string | 否 | Web 图上的展示名称，可使用中文。 |
 | `type` | string | 否 | 普通执行节点可省略或填 `agent`；条件节点填 `condition`、`decision`、`router` 或 `branch`。 |
 | `operation` | string | 否 | 执行动作。真实 Agent 节点用 `agent_task`；Simulator 节点见下文。 |
-| `deps` | string[] | 否 | 需要注入到该节点 A2A 上下文中的历史结果。即使使用显式 `edges`，也建议为需要读取上游结果的节点填写。 |
+| `deps` | string[] | 否 | 需要传递给该节点的上游历史结果。即使使用显式 `edges`，也建议为需要读取上游结果的节点填写。 |
 | `join` | string | 否 | 多入边何时触发。`all` 表示所有前置入边到达才执行；`any` 表示任一入边到达就执行。循环节点通常用 `any`。 |
 | `max_visits` | number | 否 | 单个节点最多运行次数。循环中的节点必须设置合理上限，例如 `3`。 |
 | `params` | object | 否 | Simulator 或 condition 节点使用的参数。 |
 | `simulate` | object | 否 | Simulator 执行耗时范围。真实 Agent 节点一般不需要。 |
-| `agent` | object | 否 | Agent runtime 配置。`backend` 可为 `simulator`、`multica`、`hermes`。`multica` 会创建 Multica task；`hermes` 会直接调用本地 Hermes one-shot runtime。 |
+| `agent` | object | ? | Agent runtime ???`backend` ?? `simulator`?`multica`?`hermes`?`codex`?`multica` ??? Multica task?`hermes` ??????? Hermes one-shot runtime?`codex` ????? Codex CLI ?? one-shot Agent ??? |
 | `timeout_seconds` | number | 否 | 节点最长等待时间。真实 Agent 节点建议设置 `7200` 或更高。 |
 
 ## 边格式
@@ -174,7 +174,7 @@
     "status": "in_progress",
     "priority": "high",
     "poll_seconds": 30,
-    "prompt": "请只基于A2A payload生成方案。若看到review_gate中的needs_revision评审意见，请合并其reason和required_changes重新生成。完成后把结果作为Multica评论提交，并将任务状态更新为in_review或done。"
+    "prompt": "请只基于任务输入和上游节点结果生成方案。若看到review_gate中的needs_revision评审意见，请合并其reason和required_changes重新生成。完成后把结果作为Multica评论提交，并将任务状态更新为in_review或done。"
   },
   "timeout_seconds": 7200
 }
@@ -218,12 +218,12 @@ last.confidence >= 0.8 and last.decision == 'approved'
 
 不要在条件表达式里使用任意 Python 代码、导入、复杂函数或副作用。
 
-## 数据引用和 A2A 上下文
+## 数据引用和上游上下文
 
-节点执行时会收到上游结果作为 A2A Context Payload。可通过两种方式引用数据：
+节点执行时会收到图级输入和直接依赖节点的上游结果。可通过两种方式引用数据：
 
 1. 在 Simulator 节点 `params` 中使用路径引用。
-2. 在真实 Agent 节点 prompt 中说明它应该读取 A2A payload 中的依赖节点输出。
+2. 在真实 Agent 节点 prompt 中说明它应该基于任务输入和上游节点结果完成工作。
 
 路径引用格式：
 
@@ -355,7 +355,7 @@ Simulator 节点用于测试、组装、等待、模拟轻量步骤。它不调�
     "execution_mode": "hermes_oneshot",
     "poll_seconds": 30,
     "timeout_seconds": 300,
-    "prompt": "请只基于 A2A Context Payload 输出 JSON：{\"decision\":\"approved 或 needs_revision\",\"reason\":\"中文原因\"}"
+    "prompt": "请只基于任务输入和上游节点结果输出 JSON：{\"decision\":\"approved 或 needs_revision\",\"reason\":\"中文原因\"}"
   },
   "timeout_seconds": 900
 }
@@ -392,7 +392,7 @@ Direct Hermes 节点输出会被归一化为普通节点 payload，常用字段�
     "status": "in_progress",
     "priority": "high",
     "poll_seconds": 30,
-    "prompt": "请只基于A2A payload完成该节点任务。完成后把最终结果作为Multica评论提交，并将任务状态更新为in_review或done。"
+    "prompt": "请只基于任务输入和上游节点结果完成该节点任务。完成后把最终结果作为Multica评论提交，并将任务状态更新为in_review或done。"
   },
   "timeout_seconds": 7200
 }
@@ -404,7 +404,7 @@ Direct Hermes 节点输出会被归一化为普通节点 payload，常用字段�
 | --- | --- | --- | --- |
 | `backend` | string | `multica` | 使用真实 Multica Agent Service。 |
 | `agent_key` | string | 例如 `architect`, `security`, `qa`, `docs`, `devops`, `product_strategy` | 目标 Agent 类型。具体可用值取决于本地 Multica daemon。 |
-| `context_policy` | string | `provided_context_only` | 要求 Agent 只使用 A2A payload。 |
+| `context_policy` | string | `provided_context_only` | 要求 Agent 只使用当前任务描述中的任务输入和上游节点结果。 |
 | `runtime_profile` | string | `maos_compact_agent` | 使用为 MAOS 优化的 compact profile。 |
 | `execution_mode` | string | `multica` | 通过 Multica 执行。 |
 | `status` | string | `in_progress` | 创建 Multica task 时的初始状态。 |
@@ -414,7 +414,7 @@ Direct Hermes 节点输出会被归一化为普通节点 payload，常用字段�
 
 真实 Agent 节点 prompt 应明确包含：
 
-- “只基于 A2A payload”。
+- “只基于任务输入和上游节点结果”。
 - 需要读取哪些上游节点。
 - 输出内容要求。
 - 完成后把最终结果作为 Multica 评论提交。
@@ -427,7 +427,7 @@ Direct Hermes 节点输出会被归一化为普通节点 payload，常用字段�
 推荐 prompt 片段：
 
 ```text
-你是真实Agent评审门。请只基于A2A payload判断上游结果是否通过。
+你是真实Agent评审门。请只基于任务输入和上游节点结果判断上游结果是否通过。
 最终评论末尾必须输出独立JSON代码块：
 {"decision":"needs_revision或approved","reason":"中文原因","required_changes":["修改项；没有则输出空数组"],"confidence":0.0到1.0}
 如果需要修改，输出needs_revision；否则输出approved。
@@ -462,8 +462,8 @@ Direct Hermes 节点输出会被归一化为普通节点 payload，常用字段�
 {
   "nodes": [
     {"id": "intake", "operation": "emit", "params": {"goal": "$input.goal"}},
-    {"id": "product_plan", "operation": "agent_task", "deps": ["intake"], "agent": {"backend": "multica", "agent_key": "product_strategy", "prompt": "只基于A2A payload生成产品方案。完成后评论并更新状态。"}},
-    {"id": "architecture_plan", "operation": "agent_task", "deps": ["intake"], "agent": {"backend": "multica", "agent_key": "architect", "prompt": "只基于A2A payload生成架构方案。完成后评论并更新状态。"}},
+    {"id": "product_plan", "operation": "agent_task", "deps": ["intake"], "agent": {"backend": "multica", "agent_key": "product_strategy", "prompt": "只基于任务输入和上游节点结果生成产品方案。完成后评论并更新状态。"}},
+    {"id": "architecture_plan", "operation": "agent_task", "deps": ["intake"], "agent": {"backend": "multica", "agent_key": "architect", "prompt": "只基于任务输入和上游节点结果生成架构方案。完成后评论并更新状态。"}},
     {"id": "package", "operation": "join", "join": "all", "deps": ["product_plan", "architecture_plan"], "params": {"fields": {"status": "ready", "product": "$deps.product_plan.latest_comment", "architecture": "$deps.architecture_plan.latest_comment"}}}
   ],
   "edges": [
@@ -497,7 +497,7 @@ Direct Hermes 节点输出会被归一化为普通节点 payload，常用字段�
         "status": "in_progress",
         "priority": "high",
         "poll_seconds": 30,
-        "prompt": "请只基于A2A payload生成方案。若看到review_gate中的needs_revision意见，请合并修改。完成后评论并更新状态。"
+        "prompt": "请只基于任务输入和上游节点结果生成方案。若看到review_gate中的needs_revision意见，请合并修改。完成后评论并更新状态。"
       },
       "timeout_seconds": 7200
     },
@@ -595,7 +595,7 @@ Direct Hermes 节点输出会被归一化为普通节点 payload，常用字段�
         "status": "in_progress",
         "priority": "high",
         "poll_seconds": 30,
-        "prompt": "请只基于A2A payload设计上线方案。若看到review_gate中的needs_revision评审意见，请合并reason和required_changes重新生成方案。完成后把最终结果作为Multica评论提交，并将任务状态更新为in_review或done。"
+        "prompt": "请只基于任务输入和上游节点结果设计上线方案。若看到review_gate中的needs_revision评审意见，请合并reason和required_changes重新生成方案。完成后把最终结果作为Multica评论提交，并将任务状态更新为in_review或done。"
       },
       "timeout_seconds": 7200
     },
@@ -615,7 +615,7 @@ Direct Hermes 节点输出会被归一化为普通节点 payload，常用字段�
         "status": "in_progress",
         "priority": "high",
         "poll_seconds": 30,
-        "prompt": "你是真实Agent评审门。请只基于A2A payload判断solution_plan是否可以进入最终交付。最终评论末尾必须输出独立JSON代码块：{\"decision\":\"needs_revision或approved\",\"reason\":\"中文原因\",\"required_changes\":[\"修改项；没有则输出空数组\"],\"confidence\":0.0到1.0}。完成后把最终结果作为Multica评论提交，并将任务状态更新为in_review或done。"
+        "prompt": "你是真实Agent评审门。请只基于任务输入和上游节点结果判断solution_plan是否可以进入最终交付。最终评论末尾必须输出独立JSON代码块：{\"decision\":\"needs_revision或approved\",\"reason\":\"中文原因\",\"required_changes\":[\"修改项；没有则输出空数组\"],\"confidence\":0.0到1.0}。完成后把最终结果作为Multica评论提交，并将任务状态更新为in_review或done。"
       },
       "timeout_seconds": 7200
     },
@@ -665,3 +665,37 @@ Direct Hermes 节点输出会被归一化为普通节点 payload，常用字段�
   ]
 }
 ```
+
+### Direct Codex CLI Provider
+
+??????????? Codex CLI ?? Agent runtime ?????? `backend: "codex"`??????? `codex exec` ???? one-shot ????? Temporal durable polling ????????????????? artifact?
+
+???
+```json
+{
+  "id": "codex_test_design",
+  "operation": "agent_task",
+  "agent": {
+    "backend": "codex",
+    "agent_key": "codex_cli",
+    "sandbox": "read-only",
+    "approval_policy": "never",
+    "workdir": "D:\\dev\\MAOS\\temporal_execution_core",
+    "timeout_seconds": 900,
+    "prompt": "??????????? Markdown ??????????"
+  }
+}
+```
+
+?????
+| ?? | ??? | ?? |
+| --- | --- | --- |
+| `backend` | `codex` | ???? Codex CLI provider? |
+| `codex_bin` | `CODEX_CLI_BIN` ? `codex` | Codex CLI ?????? |
+| `model` | ? | ??? `codex exec --model`? |
+| `profile` | ? | ??? `codex exec --profile`? |
+| `sandbox` | `CODEX_CLI_SANDBOX` ? `read-only` | ??? `codex exec --sandbox`? |
+| `approval_policy` | `CODEX_CLI_APPROVAL_POLICY` ? `never` | ??? `codex exec --ask-for-approval`? |
+| `workdir` | `CODEX_CLI_WORKDIR` ??????? | ??? `codex exec --cd`? |
+| `codex_args` | `[]` | ????? `codex exec` ?????? |
+

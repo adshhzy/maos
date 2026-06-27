@@ -107,5 +107,5 @@ class Settings:
             command_timeout_seconds=float(
                 os.getenv("AGENT_SERVICE_COMMAND_TIMEOUT_SECONDS", "60")
             ),
-            hermes_timeout_seconds=float(os.getenv("AGENT_SERVICE_HERMES_TIMEOUT_SECONDS", "90")),
+            hermes_timeout_seconds=float(os.getenv("AGENT_SERVICE_HERMES_TIMEOUT_SECONDS", "600")),
         )

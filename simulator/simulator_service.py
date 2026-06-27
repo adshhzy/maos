@@ -4,7 +4,11 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 from urllib.parse import urlparse
 
-from simulator.simulator_backend import get_job_status, start_simulated_job
+from simulator.simulator_backend import (
+    get_job_status,
+    start_simulated_job,
+    submit_human_response,
+)
 
 
 DEFAULT_SIMULATOR_HOST = "127.0.0.1"
@@ -39,6 +43,23 @@ def make_handler() -> type[BaseHTTPRequestHandler]:
 
         def do_POST(self) -> None:
             parsed = urlparse(self.path)
+            if (
+                parsed.path.startswith("/api/simulator/jobs/")
+                and parsed.path.endswith("/human-responses")
+            ):
+                job_id = parsed.path.split("/")[-2]
+                try:
+                    payload = self._read_json()
+                    job = submit_human_response(
+                        job_id=job_id,
+                        intervention_id=payload["intervention_id"],
+                        response=payload,
+                    )
+                except Exception as exc:
+                    self._send_json({"ok": False, "error": str(exc)}, status=400)
+                    return
+                self._send_json({"ok": True, "job": job}, status=202)
+                return
             if parsed.path != "/api/simulator/jobs":
                 self.send_error(404)
                 return

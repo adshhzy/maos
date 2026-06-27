@@ -12,6 +12,24 @@ __pycache__/
 # Runtime logs
 *.log
 runtime_logs/
+.runtime_logs/
+logs/
+tmp_*
+
+# Local generated task/demo outputs
+business_analyst_*.json
+BUSINESS_ANALYST_*.md
+README_BUSINESS_ANALYST_DAG.md
+complete_business_analyst*.py
+complete_general_chat.py
+complete_task_response.py
+corrected_general_chat_dag.json
+demo_business_analyst_dag.py
+general_chat_*completion*.json
+hermes_general_chat_*.json
+test_business_analyst_dag.py
+test_general_chat_dag.json
+validate_business_analyst_dag.py
 
 # Generated document render previews
 api_summary_render/

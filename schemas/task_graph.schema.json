@@ -1,0 +1,223 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://maos.local/schemas/task_graph.schema.json",
+  "title": "MAOS Task Graph",
+  "description": "JSON format for MAOS Temporal-backed DAG/control-flow task graphs.",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["id", "nodes"],
+  "properties": {
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]*$"
+    },
+    "name": {
+      "type": "string"
+    },
+    "type": {
+      "type": "string",
+      "enum": ["dag", "control_flow"]
+    },
+    "graph_type": {
+      "type": "string",
+      "enum": ["dag", "control_flow"]
+    },
+    "input": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "start": {
+      "oneOf": [
+        {"type": "string", "minLength": 1},
+        {
+          "type": "array",
+          "minItems": 1,
+          "items": {"type": "string", "minLength": 1}
+        }
+      ]
+    },
+    "start_nodes": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"type": "string", "minLength": 1}
+    },
+    "default_join": {
+      "type": "string",
+      "enum": ["all", "any", "race", "first"]
+    },
+    "max_total_visits": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "nodes": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"$ref": "#/$defs/node"}
+    },
+    "edges": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/edge"}
+    }
+  },
+  "allOf": [
+    {
+      "not": {
+        "required": ["start", "start_nodes"]
+      }
+    }
+  ],
+  "$defs": {
+    "node": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["id"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "label": {"type": "string"},
+        "type": {
+          "type": "string",
+          "enum": [
+            "agent",
+            "condition",
+            "decision",
+            "router",
+            "branch",
+            "human",
+            "human_node",
+            "human_intervention",
+            "approval"
+          ]
+        },
+        "operation": {"type": "string", "minLength": 1},
+        "backend": {"type": "string"},
+        "runtime": {"type": "string"},
+        "deps": {
+          "type": "array",
+          "items": {"type": "string", "minLength": 1},
+          "uniqueItems": true
+        },
+        "join": {
+          "type": "string",
+          "enum": ["all", "any", "race", "first"]
+        },
+        "max_visits": {"type": "integer", "minimum": 1},
+        "max_attempts": {"type": "integer", "minimum": 1},
+        "timeout_seconds": {"type": "number", "exclusiveMinimum": 0},
+        "poll_seconds": {"type": "number", "exclusiveMinimum": 0},
+        "result_text_limit": {"type": "integer", "minimum": 1},
+        "params": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "agent": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "backend": {"type": "string"},
+            "agent_key": {"type": "string"},
+            "agent_id": {"type": ["string", "null"]},
+            "agent_name": {"type": ["string", "null"]},
+            "context_policy": {"type": "string"},
+            "runtime_profile": {"type": "string"},
+            "execution_mode": {"type": "string"},
+            "artifact_transfer_mode": {"type": "string", "enum": ["ref", "inline"]},
+            "dependency_artifact_mode": {"type": "string", "enum": ["ref", "inline"]},
+            "poll_seconds": {"type": "number", "exclusiveMinimum": 0},
+            "timeout_seconds": {"type": "number", "exclusiveMinimum": 0},
+            "result_text_limit": {"type": "integer", "minimum": 1},
+            "prompt_payload_limit": {"type": "integer", "minimum": 1},
+            "description_payload_limit": {"type": "integer", "minimum": 1},
+            "truncate_prompt_payload": {"type": "boolean"},
+            "prompt": {"type": "string"}
+          }
+        },
+        "simulate": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "min_seconds": {"type": "number", "minimum": 0},
+            "max_seconds": {"type": "number", "minimum": 0},
+            "human_interventions": {
+              "type": "array",
+              "items": {"$ref": "#/$defs/runtime_human_request"}
+            }
+          }
+        },
+        "prompt": {"type": "string"},
+        "human_type": {"type": "string"},
+        "assignee": {"type": ["string", "null"]},
+        "assignee_role": {"type": ["string", "null"]},
+        "schema": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "response_schema": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "decision": {}
+      }
+    },
+    "edge": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["from", "to"],
+      "properties": {
+        "from": {"type": "string", "minLength": 1},
+        "to": {"type": "string", "minLength": 1},
+        "label": {"type": "string"},
+        "when": {
+          "oneOf": [
+            {"type": "string"},
+            {"type": "boolean"},
+            {"type": "null"}
+          ]
+        },
+        "kind": {
+          "type": "string",
+          "enum": ["control", "dependency", "branch", "loop", "fallback"]
+        }
+      }
+    },
+    "runtime_human_request": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["prompt"],
+      "properties": {
+        "request_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "after_seconds": {"type": "number", "minimum": 0},
+        "prompt": {"type": "string", "minLength": 1},
+        "assignee": {"type": ["string", "null"]},
+        "assignee_role": {"type": ["string", "null"]},
+        "schema": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "response_schema": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "choices": {
+          "type": "array",
+          "items": {"type": "string"}
+        },
+        "decisions": {
+          "type": "array",
+          "items": {"type": "string"}
+        },
+        "required": {"type": "boolean"}
+      }
+    }
+  }
+}

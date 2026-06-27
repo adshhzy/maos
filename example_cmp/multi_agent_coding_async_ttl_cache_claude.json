@@ -1,0 +1,181 @@
+{
+  "id": "multi-agent-coding-async-ttl-cache-claude",
+  "name": "多 Claude 协作编码示例 - AsyncTTLCache 小库实现",
+  "graph_type": "dag",
+  "default_join": "all",
+  "input": {
+    "task": "请实现一个可复用的 Python 小库 `maos_cache.py`，提供一个生产可用的 `AsyncTTLCache` 与装饰器能力。要求：1. 支持同步函数和异步函数的缓存装饰器；2. 支持 TTL 过期、maxsize LRU 淘汰、手动 clear/invalidate；3. 对同一个 key 的并发异步调用要做 single-flight 去重，避免重复执行底层函数；4. 异常结果不能被缓存；5. 提供 cache_info 统计：hits、misses、evictions、inflight、size；6. 使用标准库实现，不依赖第三方库；7. 给出完整代码、pytest 风格测试代码、关键设计说明和使用示例。"
+  },
+  "nodes": [
+    {
+      "id": "requirements_architect",
+      "label": "需求澄清与接口设计",
+      "operation": "agent_task",
+      "agent": {
+        "backend": "claude",
+        "agent_key": "architect",
+        "context_policy": "provided_context_only",
+        "runtime_profile": "claude_print",
+        "execution_mode": "claude_print",
+        "poll_seconds": 30,
+        "timeout_seconds": 1800,
+        "artifact_transfer_mode": "inline",
+        "result_text_limit": 9000,
+        "prompt_payload_limit": 22000,
+        "bare": true,
+        "prompt": "你是 Python 库架构师。请把原始编码任务拆成明确规格，输出结构化 Markdown：公共 API、类/函数签名、关键数据结构、TTL 与 LRU 的交互规则、同步/异步装饰器行为、并发 single-flight 语义、异常处理、cache_info 统计定义、测试验收清单。不要写完整实现代码，但可以给出伪代码。"
+      },
+      "timeout_seconds": 2100
+    },
+    {
+      "id": "core_implementation",
+      "label": "核心实现编码",
+      "operation": "agent_task",
+      "deps": [
+        "requirements_architect"
+      ],
+      "agent": {
+        "backend": "claude",
+        "agent_key": "coding",
+        "context_policy": "provided_context_only",
+        "runtime_profile": "claude_print",
+        "execution_mode": "claude_print",
+        "poll_seconds": 30,
+        "timeout_seconds": 3000,
+        "artifact_transfer_mode": "inline",
+        "result_text_limit": 18000,
+        "prompt_payload_limit": 36000,
+        "bare": true,
+        "prompt": "你是 Python 核心实现工程师。请严格基于上游架构规格，输出 `maos_cache.py` 的完整实现代码。要求代码可直接复制运行，使用标准库，包含类型注解。重点处理：TTL 过期清理、OrderedDict/LRU 淘汰、asyncio single-flight、同步与异步 wrapper、异常不缓存、clear/invalidate/cache_info。只输出实现相关内容和必要说明。"
+      },
+      "timeout_seconds": 3300
+    },
+    {
+      "id": "test_engineer",
+      "label": "测试用例设计与实现",
+      "operation": "agent_task",
+      "deps": [
+        "requirements_architect"
+      ],
+      "agent": {
+        "backend": "claude",
+        "agent_key": "qa",
+        "context_policy": "provided_context_only",
+        "runtime_profile": "claude_print",
+        "execution_mode": "claude_print",
+        "poll_seconds": 30,
+        "timeout_seconds": 2400,
+        "artifact_transfer_mode": "inline",
+        "result_text_limit": 14000,
+        "prompt_payload_limit": 30000,
+        "bare": true,
+        "prompt": "你是 Python 测试工程师。请严格基于上游架构规格，输出 pytest 风格测试代码。测试至少覆盖：cache hit/miss、TTL 过期、LRU 淘汰、invalidate/clear、异常不缓存、异步并发 single-flight 只执行一次、同步函数装饰器、异步函数装饰器、cache_info 统计。可以使用 pytest.mark.asyncio，但被测库本身不得依赖第三方。请输出完整测试文件代码。"
+      },
+      "timeout_seconds": 2700
+    },
+    {
+      "id": "concurrency_reviewer",
+      "label": "并发与边界审查",
+      "operation": "agent_task",
+      "deps": [
+        "requirements_architect",
+        "core_implementation"
+      ],
+      "agent": {
+        "backend": "claude",
+        "agent_key": "reviewer",
+        "context_policy": "provided_context_only",
+        "runtime_profile": "claude_print",
+        "execution_mode": "claude_print",
+        "poll_seconds": 30,
+        "timeout_seconds": 1800,
+        "artifact_transfer_mode": "inline",
+        "result_text_limit": 9000,
+        "prompt_payload_limit": 36000,
+        "bare": true,
+        "prompt": "你是并发与可靠性代码审查专家。请审查上游实现是否满足规格，重点检查：asyncio 锁使用是否正确、single-flight 是否存在竞态、过期与 LRU 淘汰顺序、异常路径是否清理 inflight、同步 wrapper 是否误用事件循环、key 生成是否稳定、cache_info 是否准确。输出：严重问题、建议修复、可接受的权衡。不要重写完整代码，只给审查意见和必要小片段。"
+      },
+      "timeout_seconds": 2100
+    },
+    {
+      "id": "final_integrator",
+      "label": "最终整合与质量修订",
+      "operation": "agent_task",
+      "deps": [
+        "requirements_architect",
+        "core_implementation",
+        "test_engineer",
+        "concurrency_reviewer"
+      ],
+      "agent": {
+        "backend": "claude",
+        "agent_key": "coordinator",
+        "context_policy": "provided_context_only",
+        "runtime_profile": "claude_print",
+        "execution_mode": "claude_print",
+        "poll_seconds": 30,
+        "timeout_seconds": 3600,
+        "artifact_transfer_mode": "inline",
+        "result_text_limit": 26000,
+        "prompt_payload_limit": 70000,
+        "bare": true,
+        "prompt": "你是最终整合工程师。请基于所有上游结果，产出最终可交付版本：1) `maos_cache.py` 完整最终代码；2) `test_maos_cache.py` 完整 pytest 测试代码；3) 简短设计说明；4) 使用示例；5) 说明你如何吸收审查意见。必须修复上游审查指出的问题。代码块必须完整可复制，不要省略。"
+      },
+      "timeout_seconds": 3900
+    }
+  ],
+  "edges": [
+    {
+      "from": "requirements_architect",
+      "to": "core_implementation",
+      "label": "规格驱动实现"
+    },
+    {
+      "from": "requirements_architect",
+      "to": "test_engineer",
+      "label": "规格驱动测试"
+    },
+    {
+      "from": "requirements_architect",
+      "to": "concurrency_reviewer",
+      "label": "规格参与审查"
+    },
+    {
+      "from": "core_implementation",
+      "to": "concurrency_reviewer",
+      "label": "审查核心实现"
+    },
+    {
+      "from": "requirements_architect",
+      "to": "final_integrator",
+      "label": "整合规格"
+    },
+    {
+      "from": "core_implementation",
+      "to": "final_integrator",
+      "label": "整合实现"
+    },
+    {
+      "from": "test_engineer",
+      "to": "final_integrator",
+      "label": "整合测试"
+    },
+    {
+      "from": "concurrency_reviewer",
+      "to": "final_integrator",
+      "label": "吸收审查意见"
+    }
+  ],
+  "description": "多 Agent 协作编码示例：通过架构、实现、测试、并发审查、最终整合的分工，验证多 Agent 编排相对单 Agent 基线能提升代码质量和覆盖完整性。",
+  "metadata": {
+    "comparison_group": "coding_async_ttl_cache",
+    "comparison_role": "multi_agent_collaboration",
+    "backend_variant": "claude",
+    "expected_advantage": [
+      "更明确的 API 规格",
+      "更完整的测试覆盖",
+      "更容易发现并发竞态和异常路径问题",
+      "最终输出能吸收审查反馈"
+    ]
+  }
+}

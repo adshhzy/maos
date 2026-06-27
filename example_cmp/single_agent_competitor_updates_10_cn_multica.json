@@ -1,0 +1,36 @@
+{
+  "id": "single-agent-competitor-updates-10-cn-multica",
+  "name": "单智能体基线示例 - Multica Research - 10家多Agent竞品近6个月动态调研",
+  "graph_type": "dag",
+  "input": {
+    "task": "帮我调研10家多Agent竞品最近6个月的产品更新、价格变化、客户案例和组织调整"
+  },
+  "nodes": [
+    {
+      "id": "single_generalist_competitor_report",
+      "label": "单通用Agent完整竞品调研",
+      "operation": "agent_task",
+      "agent": {
+        "backend": "multica",
+        "agent_key": "research",
+        "context_policy": "provided_context_only",
+        "runtime_profile": "maos_compact_agent",
+        "execution_mode": "multica",
+        "poll_seconds": 30,
+        "timeout_seconds": 3600,
+        "prompt": "帮我调研10家多Agent竞品最近6个月的产品更新、价格变化、客户案例和组织调整",
+        "result_text_limit": 9000,
+        "prompt_payload_limit": 24000,
+        "dispatch_agent_key": "research"
+      },
+      "timeout_seconds": 4200
+    }
+  ],
+  "edges": [],
+  "description": "由 single_agent_competitor_updates_10_cn.json 复制改写，单节点通过 Multica Agent Service backend 执行，并分配给 research Agent。",
+  "metadata": {
+    "source_graph": "single_agent_competitor_updates_10_cn.json",
+    "backend_variant": "multica",
+    "comparison_role": "single_agent_baseline"
+  }
+}

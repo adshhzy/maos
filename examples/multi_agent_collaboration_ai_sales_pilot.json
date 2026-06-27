@@ -1,0 +1,268 @@
+{
+  "id": "multi-agent-collaboration-ai-sales-pilot",
+  "name": "多智能体协作示例 - 人工智能销售助手制造业试点方案",
+  "graph_type": "dag",
+  "input": {
+    "demo_goal": "对比多智能体协作和单智能体一次性生成在复杂业务方案设计上的差异",
+    "task": "为一家企业软件服务公司设计一个面向中型制造业客户的人工智能销售助手试点落地方案",
+    "company_context": {
+      "product": "人工智能销售助手，可以帮助销售团队整理客户资料、生成拜访提纲、跟进商机、总结会议纪要并推荐下一步行动",
+      "target_market": "中国中型制造业企业，年营收 2 亿到 20 亿，销售团队 20 到 200 人",
+      "current_assets": [
+        "已有客户关系管理系统和部分历史商机数据",
+        "已有产品介绍、行业案例、销售话术和报价模板",
+        "已有 3 个制造业标杆客户案例",
+        "研发团队可以在 8 周内交付试点版本"
+      ],
+      "constraints": [
+        "不得上传客户敏感合同和个人隐私信息",
+        "试点预算不超过 80 万人民币",
+        "8 周内完成首批试点客户上线",
+        "需要能向首席执行官和销售负责人说明投入产出",
+        "需要明确试点失败时的止损和回滚方案"
+      ],
+      "expected_deliverable": "一份可以提交给首席执行官、销售负责人、产品负责人和安全负责人评审的试点方案"
+    },
+    "comparison_criteria": [
+      "是否覆盖市场、客户、产品、技术、安全、投入产出、上线执行等多个视角",
+      "是否识别跨职能冲突和依赖关系",
+      "是否给出可执行的试点范围、指标和时间表",
+      "是否有风险、合规、回滚和止损设计",
+      "最终方案是否保留专家节点的关键证据和可追溯来源",
+      "是否将专家分歧、约束冲突和取舍过程显式呈现",
+      "是否形成可直接提交评审的完整交付包，而不是只给高层摘要"
+    ]
+  },
+  "nodes": [
+    {
+      "id": "market_research",
+      "label": "市场与客户研究智能体",
+      "operation": "agent_task",
+      "agent": {
+        "backend": "hermes",
+        "agent_key": "research",
+        "context_policy": "provided_context_only",
+        "runtime_profile": "hermes_oneshot",
+        "execution_mode": "hermes_oneshot",
+        "poll_seconds": 30,
+        "timeout_seconds": 1200,
+        "prompt": "请只基于任务输入中的任务和公司背景，扮演市场研究智能体。输出结构化 Markdown 文档，不要输出 JSON。请分析中型制造业客户的采购动机、销售团队痛点、试点客户画像、决策链、竞争替代方案和关键市场假设。最后给出 5 条必须由其他智能体继续验证的问题。",
+        "result_text_limit": 9000
+      },
+      "timeout_seconds": 1500
+    },
+    {
+      "id": "product_strategy",
+      "label": "产品与场景策略智能体",
+      "operation": "agent_task",
+      "deps": [
+        "market_research"
+      ],
+      "agent": {
+        "backend": "hermes",
+        "agent_key": "product_strategy",
+        "context_policy": "provided_context_only",
+        "runtime_profile": "hermes_oneshot",
+        "execution_mode": "hermes_oneshot",
+        "poll_seconds": 30,
+        "timeout_seconds": 1200,
+        "prompt": "请只基于任务输入和上游节点结果，扮演产品策略智能体。吸收市场研究智能体的结果，设计首批试点场景。输出结构化 Markdown 文档，不要输出 JSON。必须包含：试点目标用户、核心用例、最小可行版本功能边界、不做事项、成功指标、用户体验原则、与市场研究结论的对应关系。",
+        "result_text_limit": 9000
+      },
+      "timeout_seconds": 1500
+    },
+    {
+      "id": "technical_architecture",
+      "label": "技术架构智能体",
+      "operation": "agent_task",
+      "deps": [
+        "product_strategy"
+      ],
+      "agent": {
+        "backend": "hermes",
+        "agent_key": "architect",
+        "context_policy": "provided_context_only",
+        "runtime_profile": "hermes_oneshot",
+        "execution_mode": "hermes_oneshot",
+        "poll_seconds": 30,
+        "timeout_seconds": 1200,
+        "prompt": "请只基于任务输入和上游节点结果，扮演技术架构智能体。根据产品试点范围设计技术落地方案。输出结构化 Markdown 文档，不要输出 JSON。必须包含：系统边界、客户关系管理系统/文档/会议纪要数据流、权限模型、数据脱敏、模型调用方式、日志审计、监控、回滚设计、8 周交付里程碑。",
+        "result_text_limit": 9000
+      },
+      "timeout_seconds": 1500
+    },
+    {
+      "id": "security_review",
+      "label": "安全与合规智能体",
+      "operation": "agent_task",
+      "deps": [
+        "market_research",
+        "product_strategy",
+        "technical_architecture"
+      ],
+      "agent": {
+        "backend": "hermes",
+        "agent_key": "security",
+        "context_policy": "provided_context_only",
+        "runtime_profile": "hermes_oneshot",
+        "execution_mode": "hermes_oneshot",
+        "poll_seconds": 30,
+        "timeout_seconds": 1200,
+        "prompt": "请只基于任务输入和上游节点结果，扮演安全与合规智能体。审查市场、产品和架构方案中的风险。输出结构化 Markdown 文档，不要输出 JSON。必须包含：数据分类、禁止上传的数据、权限控制、审计要求、客户隐私风险、合同敏感信息风险、上线前必须修复项、可以试点后再优化项。",
+        "result_text_limit": 9000
+      },
+      "timeout_seconds": 1500
+    },
+    {
+      "id": "roi_model",
+      "label": "投入产出与商业价值智能体",
+      "operation": "agent_task",
+      "deps": [
+        "market_research",
+        "product_strategy"
+      ],
+      "agent": {
+        "backend": "hermes",
+        "agent_key": "data",
+        "context_policy": "provided_context_only",
+        "runtime_profile": "hermes_oneshot",
+        "execution_mode": "hermes_oneshot",
+        "poll_seconds": 30,
+        "timeout_seconds": 1200,
+        "prompt": "请只基于任务输入和上游节点结果，扮演投入产出与商业价值智能体。输出结构化 Markdown 文档，不要输出 JSON。请建立一个可向首席执行官和销售负责人解释的试点价值模型，包含：投入成本拆解、销售效率收益假设、转化率收益假设、客户留存或续费影响、8 周试点关键指标、成功/失败判定阈值、80 万预算内的取舍。",
+        "result_text_limit": 9000
+      },
+      "timeout_seconds": 1500
+    },
+    {
+      "id": "delivery_plan",
+      "label": "上线交付与质量智能体",
+      "operation": "agent_task",
+      "deps": [
+        "technical_architecture",
+        "security_review",
+        "roi_model"
+      ],
+      "agent": {
+        "backend": "hermes",
+        "agent_key": "qa",
+        "context_policy": "provided_context_only",
+        "runtime_profile": "hermes_oneshot",
+        "execution_mode": "hermes_oneshot",
+        "poll_seconds": 30,
+        "timeout_seconds": 1200,
+        "prompt": "请只基于任务输入和上游节点结果，扮演交付与质量智能体。输出结构化 Markdown 文档，不要输出 JSON。请把技术、安全和投入产出结果转成 8 周执行计划，包含：周粒度里程碑、验收标准、测试清单、客户试点流程、培训计划、监控指标、回滚触发条件、每个角色的责任分工。",
+        "result_text_limit": 9000
+      },
+      "timeout_seconds": 1500
+    },
+    {
+      "id": "executive_synthesis",
+      "label": "总协调与完整交付包智能体",
+      "operation": "agent_task",
+      "deps": [
+        "market_research",
+        "product_strategy",
+        "technical_architecture",
+        "security_review",
+        "roi_model",
+        "delivery_plan"
+      ],
+      "agent": {
+        "backend": "hermes",
+        "agent_key": "coordinator",
+        "context_policy": "provided_context_only",
+        "runtime_profile": "hermes_oneshot",
+        "execution_mode": "hermes_oneshot",
+        "poll_seconds": 30,
+        "timeout_seconds": 1800,
+        "prompt_payload_limit": 65000,
+        "prompt": "请只基于任务输入和上游节点结果，扮演多智能体总协调智能体。你的任务不是写短摘要，也不是宣传多智能体更好，而是把所有专家智能体的结果整合成一份可直接提交首席执行官、销售负责人、产品负责人、安全负责人和交付负责人的完整评审交付包。输出结构化 Markdown 文档，不要输出 JSON。要求：1) 不得只概括上游结果，必须保留市场、产品、技术、安全、投入产出、交付六类专家输出中的关键证据、数字、约束和结论；2) 每个关键建议后用括号标注来源节点，例如（来源：market_research + product_strategy）；3) 必须包含独立章节：一页高管摘要、试点目标与边界、目标客户与采购链路、核心场景与最小可行版本范围、技术架构与数据流、安全合规与禁止事项、投入产出模型与预算拆解、8周交付计划、验收指标与监控、风险清单与回滚止损、跨职能冲突与取舍矩阵、评审决策建议、附录：专家节点关键结论摘录；4) 跨职能冲突与取舍矩阵至少包含5条冲突，例如功能范围vs8周交付、数据可用性vs隐私安全、投入产出承诺vs试点样本不足、客户个性化vs产品标准化、上线速度vs测试充分性；5) 附录中必须按market_research、product_strategy、technical_architecture、security_review、roi_model、delivery_plan逐一列出每个专家节点的3到6条关键结论；6) 输出目标长度为9000到14000个中文字符，优先完整、可执行、可追溯，不要为了简短而删掉专家细节；7) 不要写“多智能体比单智能体更好”的宣传段落，只通过专家证据链、冲突处理和完整交付包自然体现协作价值。",
+        "result_text_limit": 16000
+      },
+      "timeout_seconds": 2100
+    }
+  ],
+  "edges": [
+    {
+      "from": "market_research",
+      "to": "product_strategy",
+      "label": "市场洞察输入产品策略"
+    },
+    {
+      "from": "product_strategy",
+      "to": "technical_architecture",
+      "label": "产品边界输入技术架构"
+    },
+    {
+      "from": "market_research",
+      "to": "security_review",
+      "label": "客户场景输入安全审查"
+    },
+    {
+      "from": "product_strategy",
+      "to": "security_review",
+      "label": "产品用例输入安全审查"
+    },
+    {
+      "from": "technical_architecture",
+      "to": "security_review",
+      "label": "架构方案输入安全审查"
+    },
+    {
+      "from": "market_research",
+      "to": "roi_model",
+      "label": "市场假设输入投入产出模型"
+    },
+    {
+      "from": "product_strategy",
+      "to": "roi_model",
+      "label": "产品范围输入投入产出模型"
+    },
+    {
+      "from": "technical_architecture",
+      "to": "delivery_plan",
+      "label": "架构方案输入交付计划"
+    },
+    {
+      "from": "security_review",
+      "to": "delivery_plan",
+      "label": "安全要求输入交付计划"
+    },
+    {
+      "from": "roi_model",
+      "to": "delivery_plan",
+      "label": "投入产出指标输入交付计划"
+    },
+    {
+      "from": "market_research",
+      "to": "executive_synthesis",
+      "label": "市场研究输入最终汇总"
+    },
+    {
+      "from": "product_strategy",
+      "to": "executive_synthesis",
+      "label": "产品策略输入最终汇总"
+    },
+    {
+      "from": "technical_architecture",
+      "to": "executive_synthesis",
+      "label": "技术架构输入最终汇总"
+    },
+    {
+      "from": "security_review",
+      "to": "executive_synthesis",
+      "label": "安全审查输入最终汇总"
+    },
+    {
+      "from": "roi_model",
+      "to": "executive_synthesis",
+      "label": "投入产出模型输入最终汇总"
+    },
+    {
+      "from": "delivery_plan",
+      "to": "executive_synthesis",
+      "label": "执行计划输入最终汇总"
+    }
+  ]
+}

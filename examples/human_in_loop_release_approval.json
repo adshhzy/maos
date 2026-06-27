@@ -1,0 +1,154 @@
+{
+  "id": "human-in-loop-release-approval",
+  "name": "人在回路示例 - 发布审批",
+  "graph_type": "control_flow",
+  "max_total_visits": 12,
+  "input": {
+    "project": "企业知识库助手灰度发布",
+    "release_scope": "客服与售前团队首批试用",
+    "risk_notes": [
+      "答案必须可追溯来源",
+      "上线前必须保留人工兜底流程",
+      "涉及客户隐私的数据不能进入回答"
+    ]
+  },
+  "start": "draft_release_plan",
+  "nodes": [
+    {
+      "id": "draft_release_plan",
+      "label": "Simulator 生成发布草案",
+      "operation": "emit",
+      "params": {
+        "status": "drafted",
+        "project": "$input.project",
+        "release_scope": "$input.release_scope",
+        "risk_notes": "$input.risk_notes"
+      },
+      "simulate": {
+        "min_seconds": 2,
+        "max_seconds": 5
+      }
+    },
+    {
+      "id": "human_release_approval",
+      "type": "human",
+      "label": "人工发布审批",
+      "operation": "approval",
+      "deps": [
+        "draft_release_plan"
+      ],
+      "prompt": "请审批企业知识库助手是否允许进入灰度发布。请在Web界面选择approved、needs_revision或rejected，并填写审批意见。",
+      "assignee_role": "release_owner",
+      "schema": {
+        "decision": [
+          "approved",
+          "needs_revision",
+          "rejected"
+        ],
+        "comment": "审批意见，若打回请说明必须修改的内容"
+      },
+      "timeout_seconds": 86400
+    },
+    {
+      "id": "apply_revision",
+      "label": "Simulator 根据人工意见修订",
+      "operation": "emit",
+      "deps": [
+        "human_release_approval"
+      ],
+      "params": {
+        "status": "revised",
+        "human_decision": "$deps.human_release_approval.decision",
+        "human_comment": "$deps.human_release_approval.comment",
+        "revision_note": "已根据人工审批意见补充风险提示、回滚流程和人工兜底说明"
+      },
+      "simulate": {
+        "min_seconds": 2,
+        "max_seconds": 5
+      }
+    },
+    {
+      "id": "prepare_launch_package",
+      "label": "Simulator 直接汇总上线包",
+      "operation": "emit",
+      "deps": [
+        "human_release_approval"
+      ],
+      "params": {
+        "status": "ready",
+        "decision": "$deps.human_release_approval.decision",
+        "comment": "$deps.human_release_approval.comment",
+        "package": "灰度发布清单、回滚预案、人工兜底流程、验收口径"
+      },
+      "simulate": {
+        "min_seconds": 2,
+        "max_seconds": 5
+      }
+    },
+    {
+      "id": "prepare_revised_launch_package",
+      "label": "Simulator 修订后汇总上线包",
+      "operation": "emit",
+      "deps": [
+        "apply_revision"
+      ],
+      "params": {
+        "status": "ready_after_revision",
+        "decision": "$deps.apply_revision.human_decision",
+        "comment": "$deps.apply_revision.human_comment",
+        "package": "修订后的灰度发布清单、回滚预案、人工兜底流程、验收口径"
+      },
+      "simulate": {
+        "min_seconds": 2,
+        "max_seconds": 5
+      }
+    },
+    {
+      "id": "stop_release",
+      "label": "Simulator 终止发布",
+      "operation": "emit",
+      "deps": [
+        "human_release_approval"
+      ],
+      "params": {
+        "status": "stopped",
+        "decision": "$deps.human_release_approval.decision",
+        "reason": "$deps.human_release_approval.comment"
+      },
+      "simulate": {
+        "min_seconds": 2,
+        "max_seconds": 5
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "draft_release_plan",
+      "to": "human_release_approval",
+      "label": "草案进入人工审批"
+    },
+    {
+      "from": "human_release_approval",
+      "to": "prepare_launch_package",
+      "label": "审批通过",
+      "when": "result.decision == 'approved'"
+    },
+    {
+      "from": "human_release_approval",
+      "to": "apply_revision",
+      "label": "需要修订",
+      "when": "result.decision == 'needs_revision'"
+    },
+    {
+      "from": "apply_revision",
+      "to": "prepare_revised_launch_package",
+      "label": "修订后汇总"
+    },
+    {
+      "from": "human_release_approval",
+      "to": "stop_release",
+      "label": "审批拒绝",
+      "when": "result.decision == 'rejected'"
+    }
+  ]
+}

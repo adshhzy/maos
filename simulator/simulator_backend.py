@@ -10,6 +10,7 @@ from urllib.request import Request, urlopen
 
 
 _LOCK = threading.Lock()
+_CONDITION = threading.Condition(_LOCK)
 _EXECUTOR = ThreadPoolExecutor(max_workers=32, thread_name_prefix="dag-simulator")
 _JOBS: dict[str, dict[str, Any]] = {}
 
@@ -48,6 +49,8 @@ def start_simulated_job(
             "callback_url": None if callback is None else callback.get("url"),
             "callback_sent_at": None,
             "callback_error": None,
+            "current_human_request": None,
+            "human_responses": [],
         }
 
     _EXECUTOR.submit(
@@ -73,6 +76,31 @@ def get_job_status(job_id: str) -> dict[str, Any]:
     return job
 
 
+def submit_human_response(
+    job_id: str,
+    intervention_id: str,
+    response: dict[str, Any],
+) -> dict[str, Any]:
+    with _CONDITION:
+        job = _JOBS[job_id]
+        current_request = job.get("current_human_request") or {}
+        response_record = {
+            "intervention_id": intervention_id,
+            "human_request_id": response.get("human_request_id")
+            or current_request.get("request_id"),
+            "response": response.get("response", response),
+            "decision": response.get("decision"),
+            "comment": response.get("comment"),
+            "responder": response.get("responder"),
+            "responded_at": time.time(),
+        }
+        job["human_responses"].append(response_record)
+        job["current_human_request"] = None
+        job["status"] = "running"
+        _CONDITION.notify_all()
+        return job.copy()
+
+
 def _run_job(
     job_id: str,
     node: dict[str, Any],
@@ -83,12 +111,22 @@ def _run_job(
 ) -> None:
     callback_event: dict[str, Any] | None = None
     try:
-        time.sleep(duration_seconds)
+        spent_seconds = _run_human_checkpoints(
+            job_id,
+            node,
+            duration_seconds,
+            callback,
+        )
+        if spent_seconds < duration_seconds:
+            time.sleep(max(0, duration_seconds - spent_seconds))
+        with _LOCK:
+            human_responses = list(_JOBS[job_id].get("human_responses") or [])
         payload = run_operation(
             operation=node.get("operation", "merge"),
             params=node.get("params", {}),
             dependency_results=dependency_results,
             graph_input=graph_input,
+            human_responses=human_responses,
         )
         result = {
             "node": node["id"],
@@ -112,13 +150,84 @@ def _run_job(
         _send_callback(job_id, callback, callback_event)
 
 
+def _run_human_checkpoints(
+    job_id: str,
+    node: dict[str, Any],
+    duration_seconds: float,
+    callback: dict[str, Any] | None,
+) -> float:
+    requests = node.get("simulate", {}).get("human_interventions") or []
+    if not isinstance(requests, list) or not requests:
+        return 0
+
+    spent_seconds = 0.0
+    default_wait = min(3.0, max(0.1, duration_seconds / (len(requests) + 1)))
+    for index, request_spec in enumerate(requests, start=1):
+        wait_seconds = float(request_spec.get("after_seconds", default_wait))
+        wait_seconds = max(0.0, min(wait_seconds, max(0.0, duration_seconds - spent_seconds)))
+        if wait_seconds:
+            time.sleep(wait_seconds)
+            spent_seconds += wait_seconds
+        human_request = _human_request_from_spec(node, request_spec, index)
+        with _CONDITION:
+            _JOBS[job_id]["status"] = "waiting_human"
+            _JOBS[job_id]["current_human_request"] = human_request
+        if callback:
+            _send_callback(
+                job_id,
+                callback,
+                _callback_event(
+                    job_id,
+                    "needs_input",
+                    human_request=human_request,
+                ),
+            )
+        _wait_for_human_response(job_id, human_request["request_id"])
+    return spent_seconds
+
+
+def _human_request_from_spec(
+    node: dict[str, Any],
+    request_spec: dict[str, Any],
+    index: int,
+) -> dict[str, Any]:
+    request_id = str(
+        request_spec.get("request_id")
+        or request_spec.get("id")
+        or f"{node['id']}-input-{index}"
+    )
+    return {
+        "request_id": request_id,
+        "prompt": request_spec.get("prompt")
+        or request_spec.get("description")
+        or f"Please provide input for {node['id']}.",
+        "schema": request_spec.get("schema") or request_spec.get("response_schema") or {},
+        "assignee": request_spec.get("assignee"),
+        "assignee_role": request_spec.get("assignee_role"),
+        "choices": request_spec.get("choices") or request_spec.get("decisions") or [],
+        "required": bool(request_spec.get("required", True)),
+        "source": "simulator",
+    }
+
+
+def _wait_for_human_response(job_id: str, request_id: str) -> None:
+    with _CONDITION:
+        while True:
+            job = _JOBS[job_id]
+            for response in job.get("human_responses") or []:
+                if response.get("human_request_id") == request_id:
+                    return
+            _CONDITION.wait(timeout=1)
+
+
 def run_operation(
     operation: str,
     params: dict[str, Any],
     dependency_results: dict[str, Any],
     graph_input: dict[str, Any],
+    human_responses: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
-    context = _build_context(params, dependency_results, graph_input)
+    context = _build_context(params, dependency_results, graph_input, human_responses)
 
     if operation == "emit":
         return _resolve_value(params, context)
@@ -129,6 +238,7 @@ def run_operation(
             node_id: result["payload"]
             for node_id, result in dependency_results.items()
         }
+        payload["human_responses"] = human_responses or []
         return payload
 
     if operation == "template":
@@ -170,11 +280,31 @@ def _build_context(
     params: dict[str, Any],
     dependency_results: dict[str, Any],
     graph_input: dict[str, Any],
+    human_responses: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
-    context = {"params": params, "input": graph_input, "deps": {}}
+    context = {
+        "params": params,
+        "input": graph_input,
+        "deps": {},
+        "human_responses": human_responses or [],
+    }
     for node_id, result in dependency_results.items():
-        context["deps"][node_id] = result["payload"]
+        context["deps"][node_id] = _dependency_payload_for_context(result.get("payload", {}))
     return context
+
+
+def _dependency_payload_for_context(payload: Any) -> Any:
+    if not isinstance(payload, dict):
+        return payload
+    context_payload = dict(payload)
+    summary = context_payload.get("summary")
+    omitted = set(context_payload.get("_omitted_dependency_fields") or [])
+    if summary is not None:
+        if "latest_comment" in omitted and "latest_comment" not in context_payload:
+            context_payload["latest_comment"] = summary
+        if "stdout" in omitted and "stdout" not in context_payload:
+            context_payload["stdout"] = summary
+    return context_payload
 
 
 def _resolve_value(value: Any, context: dict[str, Any]) -> Any:
@@ -222,14 +352,19 @@ def _callback_event(
     status: str,
     result: dict[str, Any] | None = None,
     error: str | None = None,
+    human_request: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     job = get_job_status(job_id)
-    return {
+    event = {
         "status": status,
         "job": job,
         "result": result,
         "error": error,
     }
+    if human_request:
+        event["human_request"] = human_request
+        event["human_request_id"] = human_request.get("request_id")
+    return event
 
 
 def _send_callback(

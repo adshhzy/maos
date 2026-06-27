@@ -6,7 +6,7 @@
 
 from __future__ import annotations
 
-from maos_runtime.a2a_constants import HERMES_BACKEND, MULTICA_BACKEND, SIMULATOR_BACKEND
+from maos_runtime.a2a_constants import CLAUDE_BACKEND, CODEX_BACKEND, HERMES_BACKEND, MULTICA_BACKEND, SIMULATOR_BACKEND
 from maos_runtime.a2a_provider_base import AgentRuntimeProvider
 
 
@@ -22,6 +22,14 @@ _BACKEND_ALIASES = {
     "hermes-oneshot": HERMES_BACKEND,
     "direct-hermes": HERMES_BACKEND,
     "hermes-direct": HERMES_BACKEND,
+    "codex": CODEX_BACKEND,
+    "codex-cli": CODEX_BACKEND,
+    "direct-codex": CODEX_BACKEND,
+    "codex-direct": CODEX_BACKEND,
+    "claude": CLAUDE_BACKEND,
+    "claude-cli": CLAUDE_BACKEND,
+    "direct-claude": CLAUDE_BACKEND,
+    "claude-direct": CLAUDE_BACKEND,
 }
 
 _PROVIDERS: dict[str, AgentRuntimeProvider] = {}

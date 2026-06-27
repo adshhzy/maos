@@ -1,0 +1,279 @@
+{
+  "id": "multi-agent-competitor-updates-10-cn-codex",
+  "name": "全 Codex 多智能体协作示例 - 10家多Agent竞品近6个月动态调研",
+  "graph_type": "dag",
+  "input": {
+    "task": "帮我调研10家多Agent竞品最近6个月的产品更新、价格变化、客户案例和组织调整",
+    "time_window": {
+      "start_date": "2025-12-27",
+      "end_date": "2026-06-27",
+      "description": "以当前日期 2026-06-27 为基准，覆盖最近6个月"
+    },
+    "target_domain": "多Agent编排、多Agent开发框架、Agent工作流平台、企业Agent自动化平台",
+    "candidate_competitors": [
+      "LangGraph / LangChain",
+      "CrewAI",
+      "Microsoft AutoGen",
+      "OpenAI Agents SDK",
+      "Dify",
+      "Flowise",
+      "AutoGPT / Forge",
+      "Relevance AI",
+      "SmythOS",
+      "Lyzr"
+    ],
+    "required_dimensions": [
+      "最近6个月的产品更新",
+      "价格变化或套餐变化",
+      "客户案例、落地场景或公开引用客户",
+      "组织调整、融资、团队变化、战略合作或生态变化"
+    ],
+    "output_requirements": [
+      "必须区分已证实事实、合理推断和未找到公开证据的信息",
+      "每家公司至少给出2条可核验来源线索；如果没有公开来源，明确写未找到",
+      "最终报告需要给出表格、逐家公司分析、横向趋势、对MAOS持久化多Agent编排内核的启示",
+      "不要把没有来源的营销判断写成事实"
+    ]
+  },
+  "nodes": [
+    {
+      "id": "research_plan",
+      "label": "调研范围与竞品清单确认",
+      "operation": "agent_task",
+      "agent": {
+        "backend": "codex",
+        "agent_key": "research",
+        "context_policy": "provided_context_only",
+        "runtime_profile": "codex_cli",
+        "execution_mode": "codex_cli",
+        "poll_seconds": 30,
+        "timeout_seconds": 1800,
+        "prompt": "你是竞品研究规划Agent。请基于任务输入，确认本次调研的10家多Agent竞品清单、调研口径和证据标准。允许对候选名单做少量替换，但必须说明替换原因，例如候选不属于多Agent竞品、公开信息不足或更相关竞品出现。输出结构化Markdown，不要输出JSON。必须包含：1) 最终10家竞品清单；2) 每家的一句话定位；3) 四个调研维度的检索关键词建议；4) 可信来源优先级，例如官网 changelog、pricing page、blog、docs、case study、press release、招聘/组织公告、GitHub release；5) 风险提示：哪些竞品可能信息不足。",
+        "result_text_limit": 4500,
+        "prompt_payload_limit": 18000,
+        "approval_policy": "never",
+        "sandbox": "read-only"
+      },
+      "timeout_seconds": 2100
+    },
+    {
+      "id": "product_updates_research",
+      "label": "产品更新专项调研",
+      "operation": "agent_task",
+      "deps": [
+        "research_plan"
+      ],
+      "agent": {
+        "backend": "codex",
+        "agent_key": "product_strategy",
+        "context_policy": "provided_context_only",
+        "runtime_profile": "codex_cli",
+        "execution_mode": "codex_cli",
+        "poll_seconds": 30,
+        "timeout_seconds": 2400,
+        "prompt": "你是产品更新调研Agent。请只聚焦上游确认的10家多Agent竞品在2025-12-27到2026-06-27期间的产品更新。优先查找官网 changelog、release notes、docs、GitHub release、产品博客。输出结构化Markdown，不要输出JSON。对每家公司给出：1) 更新日期；2) 更新标题；3) 更新内容摘要；4) 影响的产品模块；5) 与多Agent能力的关系；6) 证据来源名称和URL；7) 可信度：高/中/低。没有找到的公司也要列出，并写明未找到公开证据。",
+        "result_text_limit": 5000,
+        "prompt_payload_limit": 18000,
+        "approval_policy": "never",
+        "sandbox": "read-only"
+      },
+      "timeout_seconds": 2700
+    },
+    {
+      "id": "pricing_research",
+      "label": "价格与套餐专项调研",
+      "operation": "agent_task",
+      "deps": [
+        "research_plan"
+      ],
+      "agent": {
+        "backend": "codex",
+        "agent_key": "data",
+        "context_policy": "provided_context_only",
+        "runtime_profile": "codex_cli",
+        "execution_mode": "codex_cli",
+        "poll_seconds": 30,
+        "timeout_seconds": 2400,
+        "prompt": "你是价格变化调研Agent。请只聚焦上游确认的10家多Agent竞品在2025-12-27到2026-06-27期间的价格、套餐、用量限制、企业版策略变化。优先查找 pricing page、docs billing page、公告、历史页面线索、公开社区讨论。输出结构化Markdown，不要输出JSON。对每家公司给出：1) 当前定价结构摘要；2) 最近6个月是否有价格变化或套餐变化；3) 证据来源和URL；4) 对企业采购门槛的影响；5) 若未找到变化证据，明确写没有找到公开证据，不要推断成没有变化。",
+        "result_text_limit": 5000,
+        "prompt_payload_limit": 18000,
+        "approval_policy": "never",
+        "sandbox": "read-only"
+      },
+      "timeout_seconds": 2700
+    },
+    {
+      "id": "customer_cases_research",
+      "label": "客户案例与落地场景专项调研",
+      "operation": "agent_task",
+      "deps": [
+        "research_plan"
+      ],
+      "agent": {
+        "backend": "codex",
+        "agent_key": "research",
+        "context_policy": "provided_context_only",
+        "runtime_profile": "codex_cli",
+        "execution_mode": "codex_cli",
+        "poll_seconds": 30,
+        "timeout_seconds": 2400,
+        "prompt": "你是客户案例调研Agent。请只聚焦上游确认的10家多Agent竞品在2025-12-27到2026-06-27期间新增或重点宣传的客户案例、行业落地、公开引用客户、合作伙伴案例。优先查找 case study、blog、press release、customer story、webinar、生态伙伴页面。输出结构化Markdown，不要输出JSON。对每家公司给出：1) 客户或行业；2) 使用场景；3) 公开证据来源和URL；4) 这是否能证明多Agent编排能力；5) 证据可信度；6) 没有找到公开案例时明确标记。",
+        "result_text_limit": 5000,
+        "prompt_payload_limit": 18000,
+        "approval_policy": "never",
+        "sandbox": "read-only"
+      },
+      "timeout_seconds": 2700
+    },
+    {
+      "id": "organization_changes_research",
+      "label": "组织调整与生态变化专项调研",
+      "operation": "agent_task",
+      "deps": [
+        "research_plan"
+      ],
+      "agent": {
+        "backend": "codex",
+        "agent_key": "operations",
+        "context_policy": "provided_context_only",
+        "runtime_profile": "codex_cli",
+        "execution_mode": "codex_cli",
+        "poll_seconds": 30,
+        "timeout_seconds": 2400,
+        "prompt": "你是组织与生态变化调研Agent。请只聚焦上游确认的10家多Agent竞品在2025-12-27到2026-06-27期间的组织调整、融资、并购、团队变化、关键人员变动、战略合作、开源社区变化和生态伙伴变化。优先查找官方公告、新闻稿、招聘/团队页面、GitHub组织动态、投资新闻、合作伙伴公告。输出结构化Markdown，不要输出JSON。对每家公司给出：1) 变化事件；2) 日期；3) 业务含义；4) 来源和URL；5) 可信度；6) 未找到时明确标记。",
+        "result_text_limit": 5000,
+        "prompt_payload_limit": 18000,
+        "approval_policy": "never",
+        "sandbox": "read-only"
+      },
+      "timeout_seconds": 2700
+    },
+    {
+      "id": "evidence_quality_review",
+      "label": "证据质量复核与缺口识别",
+      "operation": "agent_task",
+      "deps": [
+        "product_updates_research",
+        "pricing_research",
+        "customer_cases_research",
+        "organization_changes_research"
+      ],
+      "agent": {
+        "backend": "codex",
+        "agent_key": "qa",
+        "context_policy": "provided_context_only",
+        "runtime_profile": "codex_cli",
+        "execution_mode": "codex_cli",
+        "poll_seconds": 30,
+        "timeout_seconds": 1800,
+        "prompt": "你是证据质量复核Agent。请基于四个专项调研Agent的结果，检查是否存在：1) 缺少URL或来源名称；2) 把推断写成事实；3) 时间不在2025-12-27到2026-06-27范围内；4) 竞品数量不是10家；5) 同一事件重复计数；6) 产品更新、价格变化、客户案例、组织调整四个维度缺项。输出结构化Markdown，不要输出JSON。请给出：按公司和维度排列的证据完整度矩阵、需要在最终报告中标为未证实的信息、可用的高可信证据摘要、最终报告应避免的表述。",
+        "result_text_limit": 4500,
+        "prompt_payload_limit": 18000,
+        "approval_policy": "never",
+        "sandbox": "read-only"
+      },
+      "timeout_seconds": 2100
+    },
+    {
+      "id": "final_competitor_report",
+      "label": "最终竞品动态调研报告",
+      "operation": "agent_task",
+      "deps": [
+        "research_plan",
+        "product_updates_research",
+        "pricing_research",
+        "customer_cases_research",
+        "organization_changes_research",
+        "evidence_quality_review"
+      ],
+      "agent": {
+        "backend": "codex",
+        "agent_key": "coordinator",
+        "context_policy": "provided_context_only",
+        "runtime_profile": "codex_cli",
+        "execution_mode": "codex_cli",
+        "poll_seconds": 30,
+        "timeout_seconds": 2400,
+        "prompt": "你是最终报告整合Agent。请只基于任务输入和上游Agent结果，生成一份可提交的中文竞品调研报告，主题是：10家多Agent竞品最近6个月的产品更新、价格变化、客户案例和组织调整。输出结构化Markdown，不要输出JSON。报告必须包含：1) 执行摘要；2) 10家竞品总览表，列包括定位、产品更新强度、价格变化、客户案例证据、组织/生态变化、可信度；3) 逐家公司小节，每家公司包含四个维度和来源线索；4) 横向趋势：多Agent编排、Agent工作流、企业落地、定价商业化、开源/生态；5) 证据缺口和不确定性；6) 对MAOS持久化多Agent编排内核的机会与威胁；7) 建议下一步跟踪清单。必须保留来源URL或来源名称；如果上游标记未找到公开证据，最终报告也必须保留该标记，不能改写成确定事实。",
+        "result_text_limit": 9000,
+        "prompt_payload_limit": 24000,
+        "approval_policy": "never",
+        "sandbox": "read-only"
+      },
+      "timeout_seconds": 3000
+    }
+  ],
+  "edges": [
+    {
+      "from": "research_plan",
+      "to": "product_updates_research",
+      "label": "确认竞品清单后调研产品更新"
+    },
+    {
+      "from": "research_plan",
+      "to": "pricing_research",
+      "label": "确认竞品清单后调研价格变化"
+    },
+    {
+      "from": "research_plan",
+      "to": "customer_cases_research",
+      "label": "确认竞品清单后调研客户案例"
+    },
+    {
+      "from": "research_plan",
+      "to": "organization_changes_research",
+      "label": "确认竞品清单后调研组织调整"
+    },
+    {
+      "from": "product_updates_research",
+      "to": "evidence_quality_review",
+      "label": "产品更新证据进入复核"
+    },
+    {
+      "from": "pricing_research",
+      "to": "evidence_quality_review",
+      "label": "价格变化证据进入复核"
+    },
+    {
+      "from": "customer_cases_research",
+      "to": "evidence_quality_review",
+      "label": "客户案例证据进入复核"
+    },
+    {
+      "from": "organization_changes_research",
+      "to": "evidence_quality_review",
+      "label": "组织调整证据进入复核"
+    },
+    {
+      "from": "research_plan",
+      "to": "final_competitor_report",
+      "label": "竞品清单输入最终报告"
+    },
+    {
+      "from": "product_updates_research",
+      "to": "final_competitor_report",
+      "label": "产品更新输入最终报告"
+    },
+    {
+      "from": "pricing_research",
+      "to": "final_competitor_report",
+      "label": "价格变化输入最终报告"
+    },
+    {
+      "from": "customer_cases_research",
+      "to": "final_competitor_report",
+      "label": "客户案例输入最终报告"
+    },
+    {
+      "from": "organization_changes_research",
+      "to": "final_competitor_report",
+      "label": "组织调整输入最终报告"
+    },
+    {
+      "from": "evidence_quality_review",
+      "to": "final_competitor_report",
+      "label": "证据复核结论输入最终报告"
+    }
+  ],
+  "description": "由原 multi_agent_competitor_updates_10_cn.json 复制改写，所有 agent_task 节点均通过本地 Codex CLI backend 执行。"
+}

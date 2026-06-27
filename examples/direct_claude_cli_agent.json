@@ -1,0 +1,30 @@
+{
+  "id": "direct_claude_cli_agent",
+  "title": "Direct Claude CLI Agent Example",
+  "type": "dag",
+  "input": {
+    "task": "Design a concise acceptance test plan for a durable multi-agent workflow runtime."
+  },
+  "nodes": [
+    {
+      "id": "claude_test_design",
+      "label": "Claude CLI acceptance test design",
+      "operation": "agent_task",
+      "agent": {
+        "backend": "claude",
+        "agent_key": "claude_cli",
+        "context_policy": "provided_context_only",
+        "runtime_profile": "claude_print",
+        "execution_mode": "claude_print",
+        "model": "glm-5.1",
+        "permission_mode": "acceptEdits",
+        "workdir": "D:\\dev\\MAOS\\temporal_execution_core",
+        "timeout_seconds": 900,
+        "prompt": "You are a test architect. Based only on the task input, produce a concise Markdown acceptance test plan. Do not modify files or run commands. Include test goals, critical scenarios, expected results, and risks.",
+        "result_text_limit": 9000,
+        "prompt_payload_limit": 24000
+      },
+      "timeout_seconds": 1200
+    }
+  ]
+}
