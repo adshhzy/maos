@@ -5,6 +5,7 @@ MULTICA_BACKEND = "multica"
 HERMES_BACKEND = "hermes"
 CODEX_BACKEND = "codex"
 CLAUDE_BACKEND = "claude"
+EVALUATOR_BACKEND = "evaluator"
 
 MULTICA_COMPLETED_STATUSES = {"done", "in_review"}
 MULTICA_FAILED_STATUSES = {"blocked", "cancelled", "canceled"}

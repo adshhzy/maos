@@ -13,6 +13,7 @@ from maos_runtime.a2a import (
 from maos_runtime.a2a.messages import _dependency_artifacts_for_message
 from maos_runtime.a2a.runtime_config_helpers import _dependency_artifact_transfer_mode
 from maos_runtime.graph.control_flow import _public_node_spec
+from maos_runtime.sandbox.task_archive import archive_workflow_result
 
 
 @activity.defn
@@ -24,6 +25,7 @@ async def dispatch_agent_node(activity_input: dict[str, Any]) -> dict[str, Any]:
         dependency_executions,
         transfer_mode=artifact_transfer_mode,
     )
+    previous_self_node = _previous_self_result_node(node, dependency_executions)
     reference_task_ids = [
         execution["a2a_task"]["id"] for execution in dependency_executions.values()
     ]
@@ -42,6 +44,11 @@ async def dispatch_agent_node(activity_input: dict[str, Any]) -> dict[str, Any]:
                         "visit": node.get("_visit", 1),
                         "instance_id": node.get("_instance_id"),
                         "triggered_by": sorted(dependency_executions),
+                        **(
+                            {"previous_self_result_node": previous_self_node}
+                            if previous_self_node
+                            else {}
+                        ),
                     },
                     "artifact_transfer": {
                         "mode": artifact_transfer_mode,
@@ -97,6 +104,13 @@ def _dependency_artifacts_for_executions(
     return _dependency_artifacts_for_message(artifacts, transfer_mode=transfer_mode)
 
 
+def _previous_self_result_node(node: dict[str, Any], dependency_executions: dict[str, Any]) -> str | None:
+    node_id = str(node["id"])
+    if int(node.get("_visit", 1) or 1) <= 1:
+        return None
+    return node_id if node_id in dependency_executions else None
+
+
 def _full_artifacts_for_task(a2a_task: dict[str, Any]) -> list[dict[str, Any]] | None:
     task_id = a2a_task.get("id")
     if not task_id:
@@ -136,4 +150,28 @@ async def resume_agent_node_human_intervention(
     return resume_task_with_human_response(activity_input)
 
 
-ACTIVITIES = [dispatch_agent_node, poll_agent_node, resume_agent_node_human_intervention]
+@activity.defn
+async def archive_completed_workflow(activity_input: dict[str, Any]) -> dict[str, Any]:
+    workflow_id = activity_input["workflow_id"]
+    activity.heartbeat({"phase": "workflow-final-archive", "workflow_id": workflow_id})
+    try:
+        return archive_workflow_result(
+            workflow_id=workflow_id,
+            result=activity_input["result"],
+            submitted_at=activity_input.get("submitted_at"),
+            updated_at=activity_input.get("updated_at"),
+        )
+    except Exception as exc:
+        return {
+            "ok": False,
+            "workflow_id": workflow_id,
+            "error": str(exc),
+        }
+
+
+ACTIVITIES = [
+    dispatch_agent_node,
+    poll_agent_node,
+    resume_agent_node_human_intervention,
+    archive_completed_workflow,
+]

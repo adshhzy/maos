@@ -1,0 +1,39 @@
+{
+  "id": "evaluate-async-ttl-cache-single-vs-simple-loop-claude",
+  "name": "确定性评测 - AsyncTTLCache 单Agent vs 简化循环审查多Agent",
+  "graph_type": "dag",
+  "input": {
+    "benchmark_id": "async_ttl_cache",
+    "single_task_id": "task-single-agent-coding-async-ttl-cache-claude-dffc8e56-bab7-43d8-b6ab-c795121486ef",
+    "single_node_id": "single_coding_agent",
+    "multi_task_id": "task-multi-agent-coding-async-ttl-cache-simple-review-loop-claude-d97ddd84-a5ac-464e-9fa4-a05787e10d7b",
+    "multi_node_id": "final_integrator"
+  },
+  "nodes": [
+    {
+      "id": "deterministic_evaluator",
+      "label": "确定性隐藏测试评测",
+      "operation": "evaluate",
+      "agent": {
+        "backend": "evaluator",
+        "agent_key": "async_ttl_cache",
+        "context_policy": "provided_context_only",
+        "runtime_profile": "deterministic",
+        "execution_mode": "local_pytest",
+        "poll_seconds": 5,
+        "timeout_seconds": 300
+      },
+      "params": {
+        "benchmark_id": "async_ttl_cache"
+      },
+      "timeout_seconds": 420
+    }
+  ],
+  "edges": [],
+  "description": "评测单 Claude 编码基线与最近完成的多 Claude 简化循环审查编码示例。Evaluator 会拉取两个任务指定节点的最终输出，提取 maos_cache.py，并运行隐藏测试生成对比报告。",
+  "metadata": {
+    "comparison_group": "coding_async_ttl_cache",
+    "backend_variant": "evaluator",
+    "source": "single_vs_completed_simple_review_loop"
+  }
+}

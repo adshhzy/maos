@@ -7,6 +7,7 @@ workflow class. Existing imports from maos_runtime.dag_workflow continue to work
 from maos_runtime.graph.control_flow import normalize_graph, validate_graph
 from maos_runtime.workflows.activities import (
     ACTIVITIES,
+    archive_completed_workflow,
     dispatch_agent_node,
     poll_agent_node,
 )
@@ -26,6 +27,7 @@ __all__ = [
     "DEFAULT_NODE_TIMEOUT_SECONDS",
     "JsonControlFlowWorkflow",
     "JsonDagWorkflow",
+    "archive_completed_workflow",
     "dispatch_agent_node",
     "normalize_graph",
     "poll_agent_node",

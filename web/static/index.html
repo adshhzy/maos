@@ -62,7 +62,7 @@
       box-shadow: var(--shadow);
       margin-bottom: 12px;
     }
-    input[type="file"], select, button {
+    input[type="file"], input[type="text"], select, button {
       height: 36px;
       border: 1px solid var(--line);
       background: #fff;
@@ -71,6 +71,7 @@
       font-size: 13px;
     }
     input[type="file"] { padding: 6px 8px; min-width: 0; }
+    input[type="text"] { padding: 0 10px; min-width: 0; }
     select { padding: 0 10px; min-width: 0; }
     button {
       padding: 0 14px;
@@ -568,6 +569,22 @@
       min-height: 160px;
       overflow: visible;
     }
+    .export-toolbar {
+      display: grid;
+      grid-template-columns: minmax(260px, 1fr) auto;
+      gap: 8px;
+      align-items: center;
+      margin: 0 0 10px;
+    }
+    .export-status {
+      grid-column: 1 / -1;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.45;
+      overflow-wrap: anywhere;
+    }
+    .export-status.success { color: #1f744c; }
+    .export-status.error { color: #9b2630; }
     .main-final-output {
       margin-top: 16px;
       background: linear-gradient(180deg, #fbfefd 0%, #f7fbfa 100%);
@@ -658,6 +675,116 @@
       background: #eef6f3;
       color: #25384a;
       font-weight: 780;
+    }
+    .evaluator-report {
+      display: grid;
+      gap: 14px;
+    }
+    .eval-score-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 10px;
+    }
+    .eval-score-card {
+      border: 1px solid #d8e4df;
+      background: #fff;
+      padding: 10px;
+      min-width: 0;
+    }
+    .eval-score-card strong {
+      display: block;
+      font-size: 18px;
+      line-height: 1.2;
+      overflow-wrap: anywhere;
+    }
+    .eval-score-card span {
+      display: block;
+      margin-top: 5px;
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 720;
+    }
+    .eval-section {
+      border-top: 1px solid #dce7e3;
+      padding-top: 12px;
+    }
+    .eval-section h4 {
+      margin: 0 0 8px;
+      font-size: 13px;
+      letter-spacing: 0;
+    }
+    .eval-table-wrap {
+      overflow-x: auto;
+      border: 1px solid #d8e4df;
+      background: #fff;
+    }
+    .eval-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 12px;
+    }
+    .eval-table th,
+    .eval-table td {
+      border-bottom: 1px solid #e3ebe8;
+      border-right: 1px solid #e3ebe8;
+      padding: 7px 8px;
+      text-align: left;
+      vertical-align: top;
+    }
+    .eval-table th {
+      background: #eef6f3;
+      color: #25384a;
+      font-weight: 780;
+      white-space: nowrap;
+    }
+    .eval-command-list {
+      display: grid;
+      gap: 8px;
+    }
+    .eval-command {
+      border: 1px solid #d8e4df;
+      background: #fff;
+      padding: 9px;
+    }
+    .eval-command.failed {
+      border-left: 4px solid #b84242;
+    }
+    .eval-command.passed {
+      border-left: 4px solid #2c8a6a;
+    }
+    .eval-command-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      flex-wrap: wrap;
+      font-size: 12px;
+      font-weight: 780;
+      margin-bottom: 6px;
+    }
+    .eval-command pre {
+      max-height: 360px;
+      overflow: auto;
+      white-space: pre-wrap;
+      margin: 8px 0 0;
+      border: 1px solid #e0e8e5;
+      background: #fbfcff;
+      padding: 9px;
+      font-size: 12px;
+      line-height: 1.5;
+    }
+    .eval-command details {
+      margin-top: 8px;
+    }
+    .eval-command summary {
+      cursor: pointer;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 760;
+    }
+    @media (max-width: 980px) {
+      .eval-score-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
     }
     .agent-input-panel {
       background: #fbfcff;
@@ -862,6 +989,11 @@
         <svg id="graphSvg" role="img" aria-label="Temporal control-flow execution graph"></svg>
       </div>
       <h2>Agent Final Output</h2>
+      <div class="export-toolbar">
+        <input id="markdownExportDir" type="text" placeholder="Markdown export directory, blank = Desktop\\MAOS-exports" />
+        <button id="exportMarkdownButton">Export Markdown</button>
+        <div id="markdownExportStatus" class="export-status">Select a completed task or node to export its final output.</div>
+      </div>
       <div class="detail final-output-panel main-final-output" id="agentFinalOutput">Select a Multica, Hermes, Codex, or Claude node to inspect the complete final Agent output.</div>
     </main>
     <aside>
@@ -894,12 +1026,16 @@
     const exampleSelect = document.getElementById("exampleSelect");
     const runButton = document.getElementById("runButton");
     const refreshButton = document.getElementById("refreshButton");
+    const exportMarkdownButton = document.getElementById("exportMarkdownButton");
+    const markdownExportDir = document.getElementById("markdownExportDir");
+    const markdownExportStatus = document.getElementById("markdownExportStatus");
     const tabsEl = document.getElementById("tabs");
     const taskBoardBody = document.getElementById("taskBoardBody");
     let loadedGraphs = [];
     let tasks = [];
     let activeTaskId = null;
     let selectedNodeId = null;
+    let previewTask = null;
     let traceRequestToken = 0;
     const inputCache = new Map();
     const inputInflight = new Map();
@@ -911,6 +1047,11 @@
     fileInput.addEventListener("change", loadLocalFiles);
     runButton.addEventListener("click", runBatch);
     refreshButton.addEventListener("click", refresh);
+    exportMarkdownButton.addEventListener("click", exportActiveMarkdown);
+    markdownExportDir.value = localStorage.getItem("maosMarkdownExportDir") || "";
+    markdownExportDir.addEventListener("change", () => {
+      localStorage.setItem("maosMarkdownExportDir", markdownExportDir.value.trim());
+    });
 
     async function loadExamples() {
       const response = await fetch("/api/examples", { cache: "no-store" });
@@ -933,6 +1074,7 @@
         }
         loadedGraphs = graphs;
         document.getElementById("loadedSummary").textContent = `Loaded ${graphs.length} local graph(s).`;
+        await renderLoadedGraphPreview(graphs);
         clearError();
       } catch (error) {
         showError(`Could not load files: ${error}`);
@@ -950,10 +1092,42 @@
         }
         loadedGraphs = graphs;
         document.getElementById("loadedSummary").textContent = `Loaded ${graphs.length} example graph(s).`;
+        await renderLoadedGraphPreview(graphs);
         clearError();
       } catch (error) {
         showError(`Could not load examples: ${error}`);
       }
+    }
+
+    async function renderLoadedGraphPreview(graphs) {
+      previewTask = null;
+      activeTaskId = null;
+      selectedNodeId = null;
+      if (!graphs.length) {
+        renderActiveTask();
+        return;
+      }
+      const response = await fetch("/api/preview", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ graphs }),
+      });
+      const data = await response.json();
+      if (!response.ok || !data.ok) throw new Error(data.detail || data.error || "Could not build graph preview");
+      const preview = (data.previews || [])[0];
+      if (!preview) return;
+      previewTask = {
+        task_id: "__loaded_preview__",
+        workflow_id: "__loaded_preview__",
+        graph_id: preview.graph_id,
+        graph_name: preview.graph_name,
+        status: "queued",
+        state: preview,
+        result: null,
+        error: null,
+      };
+      renderTabs();
+      renderActiveTask();
     }
 
     async function runBatch() {
@@ -972,12 +1146,61 @@
         if (!response.ok || !data.ok) throw new Error(data.error || "Run failed");
         activeTaskId = data.task_ids[0];
         selectedNodeId = null;
+        previewTask = null;
         await refresh();
       } catch (error) {
         showError(`Could not start batch: ${error}`);
       } finally {
         runButton.disabled = false;
       }
+    }
+
+    async function exportActiveMarkdown() {
+      const task = tasks.find(item => item.task_id === activeTaskId);
+      if (!task) {
+        setExportStatus("Select a completed task before exporting Markdown.", "error");
+        return;
+      }
+      const outputDir = markdownExportDir.value.trim();
+      if (outputDir) localStorage.setItem("maosMarkdownExportDir", outputDir);
+      exportMarkdownButton.disabled = true;
+      setExportStatus("Exporting Markdown...", "");
+      try {
+        const response = await fetch(`/api/tasks/${encodeURIComponent(task.task_id)}/export-markdown`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            output_dir: outputDir || null,
+            node_id: selectedNodeId || null,
+          }),
+        });
+        const data = await response.json();
+        if (!response.ok || !data.ok) throw new Error(data.detail || data.error || "Markdown export failed");
+        setExportStatus(`Saved ${data.content_chars || 0} chars to ${data.output_path}`, "success");
+      } catch (error) {
+        setExportStatus(String(error), "error");
+      } finally {
+        exportMarkdownButton.disabled = !tasks.find(item => item.task_id === activeTaskId);
+      }
+    }
+
+    function setExportStatus(message, kind) {
+      markdownExportStatus.textContent = message;
+      markdownExportStatus.className = `export-status${kind ? ` ${kind}` : ""}`;
+    }
+
+    function updateExportControls() {
+      const task = tasks.find(item => item.task_id === activeTaskId);
+      const hasTask = Boolean(task);
+      exportMarkdownButton.disabled = !hasTask;
+      if (!hasTask) {
+        setExportStatus("Select a completed task or node to export its final output.", "");
+        return;
+      }
+      const selectedText = selectedNodeId
+        ? `Selected node: ${selectedNodeId}.`
+        : "No node selected; the final output node will be detected automatically.";
+      setExportStatus(`${selectedText} Markdown will be written by the sandbox API service.`, "");
     }
 
     async function refresh() {
@@ -987,13 +1210,14 @@
         tasks = data.tasks || [];
         document.getElementById("runtimeStatus").textContent = `Runtime: ${data.runtime_status} | tasks: ${tasks.length}`;
         if (data.error) showError(data.error);
-        if (!activeTaskId && tasks.length) activeTaskId = tasks[0].task_id;
+        if (!activeTaskId && !previewTask && tasks.length) activeTaskId = tasks[0].task_id;
         if (activeTaskId) {
           await fetchActiveTaskDetail(activeTaskId);
         }
         renderDashboard(data);
         renderTabs();
         renderActiveTask();
+        updateExportControls();
         document.getElementById("updatedAt").textContent = new Date().toLocaleTimeString();
       } catch (error) {
         showError(String(error));
@@ -1069,6 +1293,7 @@
     async function selectTask(taskId) {
       if (!taskId) return;
       activeTaskId = taskId;
+      previewTask = null;
       selectedNodeId = null;
       await fetchActiveTaskDetail(activeTaskId);
       autoSelectSingleNode();
@@ -1077,7 +1302,7 @@
     }
 
     function autoSelectSingleNode() {
-      const task = tasks.find(item => item.task_id === activeTaskId);
+      const task = tasks.find(item => item.task_id === activeTaskId) || previewTask;
       const nodes = ((task || {}).state || {}).nodes || [];
       if (!selectedNodeId && nodes.length === 1) {
         selectedNodeId = nodes[0].id;
@@ -1166,18 +1391,23 @@
     }
 
     function renderActiveTask() {
-      const task = tasks.find(item => item.task_id === activeTaskId);
+      const task = tasks.find(item => item.task_id === activeTaskId) || previewTask;
       if (!task) {
         drawGraph({ levels: [], edges: [], nodes: [] });
         setMetrics([]);
         renderControlFlowSummary({ levels: [], edges: [], nodes: [] });
         renderHumanPanel(null);
         document.getElementById("resultBox").textContent = "Waiting for batch run...";
+        updateExportControls();
         return;
       }
       autoSelectSingleNode();
       drawGraph(task.state);
       updateSidebar(task);
+      updateExportControls();
+      if (task === previewTask) {
+        document.getElementById("resultBox").textContent = `Preview only. Click Run Loaded Batch to start ${loadedGraphs.length} loaded graph(s).`;
+      }
     }
 
     function nodeProgress(task) {
@@ -1795,7 +2025,7 @@
     }
 
     function currentInstanceResults() {
-      const task = tasks.find(item => item.task_id === activeTaskId) || {};
+      const task = tasks.find(item => item.task_id === activeTaskId) || previewTask || {};
       return {
         ...(((task.result || {}).instance_results) || {}),
         ...(((task.state || {}).instance_results) || {}),
@@ -1803,7 +2033,7 @@
     }
 
     function currentNodeResult(node) {
-      const task = tasks.find(item => item.task_id === activeTaskId) || {};
+      const task = tasks.find(item => item.task_id === activeTaskId) || previewTask || {};
       const nodeId = typeof node === "string" ? node : node.id;
       const directResult = (((task.result || {}).results || {})[nodeId])
         || (((task.state || {}).results || {})[nodeId]);
@@ -1837,11 +2067,13 @@
         ? (instance.claude_task_id || (result || {}).claude_task_id || "")
         : backend === "codex"
           ? (instance.codex_task_id || (result || {}).codex_task_id || instance.a2a_task_id || "")
-          : "";
+          : backend === "evaluator"
+            ? (instance.a2a_task_id || (result || {}).evaluation_task_id || "")
+            : "";
       let inspectButton = "";
       if (["multica", "hermes"].includes(backend) && agentTaskId) {
         inspectButton = `<button class="visit-button" type="button" data-agent-task-id="${escapeHtml(agentTaskId)}" data-visit-id="${escapeHtml(instance.id)}">Inspect visit</button>`;
-      } else if (["claude", "codex"].includes(backend) && localRuntimeId) {
+      } else if (["claude", "codex", "evaluator"].includes(backend) && localRuntimeId) {
         inspectButton = `<button class="visit-button" type="button" data-local-backend="${escapeHtml(backend)}" data-local-runtime-id="${escapeHtml(localRuntimeId)}">Inspect visit</button>`;
       }
       return `
@@ -1886,7 +2118,7 @@
       const token = ++traceRequestToken;
       const normalizedBackend = String(backend || "").toLowerCase();
       const info = {
-        label: normalizedBackend === "codex" ? "Codex" : "Claude",
+        label: normalizedBackend === "codex" ? "Codex" : normalizedBackend === "evaluator" ? "Evaluator" : "Claude",
         runtimeId,
       };
       updateLocalRuntimeInput(info, normalizedBackend, token);
@@ -1936,6 +2168,11 @@
       const result = currentNodeResult(node);
       const backend = localBackendName(node, result);
       const taskId = node.agent_service_task_id || (result || {}).agent_service_task_id || "";
+      if (backend === "evaluator") {
+        renderLocalRuntimePanels(node, result, backend, token);
+        traceEl.innerHTML = renderLocalRuntimeTrace(node, result, backend);
+        return;
+      }
       if (isAlwaysLocalRuntimeBackend(backend) || (isLocalRuntimeBackend(backend) && !taskId)) {
         renderLocalRuntimePanels(node, result, backend, token);
         return;
@@ -2011,6 +2248,14 @@
           runtimeId: (result && (result.claude_task_id || ((result.payload || {}).claude_task_id))) || node.claude_task_id || node.a2a_task_id,
           command: node.claude_command || (result || {}).claude_command || ((result || {}).payload || {}).claude_command,
           workdir: node.claude_workdir || (result || {}).claude_workdir || ((result || {}).payload || {}).claude_workdir,
+        };
+      }
+      if (normalized === "evaluator") {
+        return {
+          label: "Evaluator",
+          runtimeId: node.a2a_task_id || (result || {}).evaluation_task_id,
+          command: "deterministic local benchmark",
+          workdir: ((result || {}).report || {}).workspace,
         };
       }
       return {
@@ -2127,7 +2372,435 @@
           Output size: ${escapeHtml(data.output_chars || finalOutput.chars || 0)} chars
         </div>
       `;
+      if (data.evaluation_report) {
+        return `${header}${renderEvaluatorReport(data.evaluation_report, finalOutput)}`;
+      }
       return `${header}${renderFinalOutput(finalOutput)}`;
+    }
+
+    function renderEvaluatorReport(report, finalOutput) {
+      const single = report.single || {};
+      const multi = report.multi || {};
+      const delta = report.score_delta == null ? "-" : formatNumber(report.score_delta);
+      return `
+        <div class="evaluator-report">
+          <div class="final-output-title">
+            <span>Deterministic Evaluation Result</span>
+            <span class="final-output-meta">
+              ${report.evaluation_task_id ? `<span class="output-chip">eval ${escapeHtml(report.evaluation_task_id)}</span>` : ""}
+              <span class="output-chip">${escapeHtml(report.status || "-")}</span>
+              <span class="output-chip">benchmark ${escapeHtml(report.benchmark_id || "-")}</span>
+              <span class="output-chip">winner ${escapeHtml(report.winner || "-")}</span>
+            </span>
+          </div>
+          <div class="eval-score-grid">
+            ${renderEvalScoreCard("Winner", report.winner || "-")}
+            ${renderEvalScoreCard("Single score", single.score == null ? "-" : formatNumber(single.score))}
+            ${renderEvalScoreCard("Multi score", multi.score == null ? "-" : formatNumber(multi.score))}
+            ${renderEvalScoreCard("Multi - single", delta)}
+          </div>
+          <div class="eval-section">
+            <h4>Score Method</h4>
+            ${renderEvalScoreMethod(report)}
+          </div>
+          <div class="eval-section">
+            <h4>Score Breakdown</h4>
+            ${renderEvalScoreBreakdown(report)}
+          </div>
+          <div class="eval-section">
+            <h4>Comparison Run IDs</h4>
+            ${renderEvalComparisonSources(report)}
+          </div>
+          <div class="eval-section">
+            <h4>Hidden Test Summary</h4>
+            ${renderEvalHiddenTests(single, multi)}
+          </div>
+          <div class="eval-section">
+            <h4>Extraction And Files</h4>
+            ${renderEvalExtraction(single, multi)}
+          </div>
+          <div class="eval-section">
+            <h4>Command Details And Failure Reasons</h4>
+            ${renderEvalCommands(single, multi)}
+          </div>
+          <div class="eval-section">
+            ${renderFinalOutput(finalOutput)}
+          </div>
+        </div>
+      `;
+    }
+
+    function renderEvalScoreMethod(report) {
+      const rubric = normalizedRubric(report);
+      const formula = `score = extract(${rubric.extract}) + compile(${rubric.compile}) + hidden_tests(${rubric.hidden_tests} * passed / total) + docs(${rubric.docs})`;
+      return `
+        <div class="trace-meta">
+          <strong>Formula:</strong> ${escapeHtml(formula)}<br>
+          Hidden test total excludes skipped tests from the pass ratio. A failed or errored hidden test counts against the ratio.
+        </div>
+        <div class="eval-table-wrap">
+          <table class="eval-table">
+            <thead>
+              <tr>
+                <th>Dimension</th>
+                <th>Max points</th>
+                <th>Meaning</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr><td>Extract</td><td>${escapeHtml(rubric.extract)}</td><td>Can deterministically extract the required main implementation file.</td></tr>
+              <tr><td>Compile</td><td>${escapeHtml(rubric.compile)}</td><td>The extracted maos_cache.py passes python -m py_compile.</td></tr>
+              <tr><td>Hidden tests</td><td>${escapeHtml(rubric.hidden_tests)}</td><td>Fixed evaluator-owned pytest cases: points = max points × passed / (passed + failed + errors).</td></tr>
+              <tr><td>Docs</td><td>${escapeHtml(rubric.docs)}</td><td>Presence of design notes and usage/example markers in the final output.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      `;
+    }
+
+    function normalizedRubric(report) {
+      const rubric = report.rubric || {};
+      return {
+        extract: Number.isFinite(Number(rubric.extract)) ? Number(rubric.extract) : 10,
+        compile: Number.isFinite(Number(rubric.compile)) ? Number(rubric.compile) : 10,
+        hidden_tests: Number.isFinite(Number(rubric.hidden_tests)) ? Number(rubric.hidden_tests) : 70,
+        docs: Number.isFinite(Number(rubric.docs)) ? Number(rubric.docs) : 10,
+      };
+    }
+
+    function renderEvalScoreBreakdown(report) {
+      const rubric = normalizedRubric(report);
+      const rows = [
+        renderEvalBreakdownRow("Single Agent", report.single || {}, rubric),
+        renderEvalBreakdownRow("Multi Agent", report.multi || {}, rubric),
+      ].join("");
+      return `
+        <div class="eval-table-wrap">
+          <table class="eval-table">
+            <thead>
+              <tr>
+                <th>Candidate</th>
+                <th>Extract</th>
+                <th>Compile</th>
+                <th>Hidden tests</th>
+                <th>Docs</th>
+                <th>Total</th>
+              </tr>
+            </thead>
+            <tbody>${rows}</tbody>
+          </table>
+        </div>
+      `;
+    }
+
+    function renderEvalBreakdownRow(label, candidate, rubric) {
+      const breakdown = scoreBreakdown(candidate, rubric);
+      return `
+        <tr>
+          <td>${escapeHtml(label)}</td>
+          <td>${escapeHtml(formatNumber(breakdown.extract))} / ${escapeHtml(rubric.extract)}</td>
+          <td>${escapeHtml(formatNumber(breakdown.compile))} / ${escapeHtml(rubric.compile)}</td>
+          <td>${escapeHtml(formatNumber(breakdown.hidden_tests))} / ${escapeHtml(rubric.hidden_tests)}<br><span class="muted">${escapeHtml(formatPercent(breakdown.hidden_test_ratio))} pass ratio</span></td>
+          <td>${escapeHtml(formatNumber(breakdown.docs))} / ${escapeHtml(rubric.docs)}</td>
+          <td><strong>${escapeHtml(candidate.score == null ? formatNumber(breakdown.total) : formatNumber(candidate.score))}</strong></td>
+        </tr>
+      `;
+    }
+
+    function scoreBreakdown(candidate, rubric) {
+      const existing = candidate.score_breakdown || candidate.scoreBreakdown;
+      if (existing && typeof existing === "object") {
+        const total = Number(existing.extract || 0) + Number(existing.compile || 0) + Number(existing.hidden_tests || 0) + Number(existing.docs || 0);
+        return {
+          extract: Number(existing.extract || 0),
+          compile: Number(existing.compile || 0),
+          hidden_tests: Number(existing.hidden_tests || 0),
+          hidden_test_ratio: Number(existing.hidden_test_ratio || 0),
+          docs: Number(existing.docs || 0),
+          total,
+        };
+      }
+      const counts = normalizedTestCounts(candidate.hidden_tests || {});
+      const ratio = hiddenPassRatio(counts);
+      return {
+        extract: candidate.extract_ok ? rubric.extract : 0,
+        compile: findEvalCommand(candidate, "py_compile").passed ? rubric.compile : 0,
+        hidden_tests: rubric.hidden_tests * ratio,
+        hidden_test_ratio: ratio,
+        docs: Number(candidate.docs_score || 0),
+        total: (candidate.extract_ok ? rubric.extract : 0)
+          + (findEvalCommand(candidate, "py_compile").passed ? rubric.compile : 0)
+          + rubric.hidden_tests * ratio
+          + Number(candidate.docs_score || 0),
+      };
+    }
+
+    function renderEvalComparisonSources(report) {
+      const sources = evaluatorSources(report);
+      const rows = [
+        renderEvalSourceRow("Single Agent", sources.single || {}),
+        renderEvalSourceRow("Multi Agent", sources.multi || {}),
+      ].join("");
+      return `
+        <div class="eval-table-wrap">
+          <table class="eval-table">
+            <thead>
+              <tr>
+                <th>Candidate</th>
+                <th>Task / run ID</th>
+                <th>Node ID</th>
+                <th>Input mode</th>
+              </tr>
+            </thead>
+            <tbody>${rows}</tbody>
+          </table>
+        </div>
+      `;
+    }
+
+    function evaluatorSources(report) {
+      const direct = report.comparison_sources || report.comparisonSources;
+      if (direct && typeof direct === "object") return direct;
+      const config = report.config || report.evaluation_config || report.evaluationConfig || {};
+      return {
+        single: {
+          task_id: config.single_task_id,
+          node_id: config.single_node_id,
+          has_direct_output: Boolean(config.single_output),
+        },
+        multi: {
+          task_id: config.multi_task_id,
+          node_id: config.multi_node_id,
+          has_direct_output: Boolean(config.multi_output),
+        },
+      };
+    }
+
+    function renderEvalSourceRow(label, source) {
+      const taskId = source.task_id || source.taskId || "-";
+      const nodeId = source.node_id || source.nodeId || "-";
+      const direct = source.has_direct_output || source.hasDirectOutput;
+      const mode = direct ? "direct output" : "task lookup";
+      return `
+        <tr>
+          <td>${escapeHtml(label)}</td>
+          <td><code>${escapeHtml(taskId)}</code></td>
+          <td><code>${escapeHtml(nodeId)}</code></td>
+          <td>${escapeHtml(mode)}</td>
+        </tr>
+      `;
+    }
+
+    function renderEvalScoreCard(label, value) {
+      return `
+        <div class="eval-score-card">
+          <strong>${escapeHtml(value)}</strong>
+          <span>${escapeHtml(label)}</span>
+        </div>
+      `;
+    }
+
+    function renderEvalHiddenTests(single, multi) {
+      const rows = [
+        renderEvalHiddenRow("Single Agent", single),
+        renderEvalHiddenRow("Multi Agent", multi),
+      ].join("");
+      return `
+        <div class="eval-table-wrap">
+          <table class="eval-table">
+            <thead>
+              <tr>
+                <th>Candidate</th>
+                <th>Score</th>
+                <th>Passed</th>
+                <th>Failed</th>
+                <th>Errors</th>
+                <th>Skipped</th>
+                <th>Total</th>
+                <th>Pass ratio</th>
+                <th>Exit</th>
+                <th>Duration</th>
+                <th>Failure summary</th>
+              </tr>
+            </thead>
+            <tbody>${rows}</tbody>
+          </table>
+        </div>
+      `;
+    }
+
+    function renderEvalHiddenRow(label, candidate) {
+      const hidden = findEvalCommand(candidate, "hidden_pytest");
+      const counts = normalizedTestCounts(candidate.hidden_tests || parsePytestCounts(`${hidden.stdout || ""}\n${hidden.stderr || ""}`));
+      const summary = hidden.passed
+        ? "All hidden tests passed."
+        : summarizeFailureOutput(hidden.stdout || hidden.stderr || "-");
+      return `
+        <tr>
+          <td>${escapeHtml(label)}</td>
+          <td>${escapeHtml(candidate.score == null ? "-" : formatNumber(candidate.score))}</td>
+          <td>${escapeHtml(counts.passed)}</td>
+          <td>${escapeHtml(counts.failed)}</td>
+          <td>${escapeHtml(counts.errors)}</td>
+          <td>${escapeHtml(counts.skipped)}</td>
+          <td>${escapeHtml(hiddenTestTotal(counts))}</td>
+          <td>${escapeHtml(formatPercent(hiddenPassRatio(counts)))}</td>
+          <td>${escapeHtml(hidden.exit_code == null ? "-" : hidden.exit_code)}</td>
+          <td>${escapeHtml(formatSeconds(hidden.duration_seconds || 0))}</td>
+          <td>${escapeHtml(summary)}</td>
+        </tr>
+      `;
+    }
+
+    function renderEvalExtraction(single, multi) {
+      const rows = [
+        renderEvalExtractionRow("Single Agent", single),
+        renderEvalExtractionRow("Multi Agent", multi),
+      ].join("");
+      return `
+        <div class="eval-table-wrap">
+          <table class="eval-table">
+            <thead>
+              <tr>
+                <th>Candidate</th>
+                <th>Extract OK</th>
+                <th>Output size</th>
+                <th>Files</th>
+                <th>Extraction errors</th>
+              </tr>
+            </thead>
+            <tbody>${rows}</tbody>
+          </table>
+        </div>
+      `;
+    }
+
+    function renderEvalExtractionRow(label, candidate) {
+      const files = Object.entries(candidate.files || {})
+        .map(([name, meta]) => `${name} (${meta.lines || 0} lines, ${meta.chars || 0} chars)`)
+        .join("\n") || "-";
+      const errors = Array.isArray(candidate.extraction_errors) && candidate.extraction_errors.length
+        ? candidate.extraction_errors.join("\n")
+        : "-";
+      return `
+        <tr>
+          <td>${escapeHtml(label)}</td>
+          <td>${escapeHtml(candidate.extract_ok ? "yes" : "no")}</td>
+          <td>${escapeHtml(candidate.output_chars || 0)} chars</td>
+          <td><pre>${escapeHtml(files)}</pre></td>
+          <td><pre>${escapeHtml(errors)}</pre></td>
+        </tr>
+      `;
+    }
+
+    function renderEvalCommands(single, multi) {
+      const sections = [
+        renderEvalCandidateCommands("Single Agent", single),
+        renderEvalCandidateCommands("Multi Agent", multi),
+      ].join("");
+      return `<div class="eval-command-list">${sections}</div>`;
+    }
+
+    function renderEvalCandidateCommands(label, candidate) {
+      const commands = Array.isArray(candidate.commands) ? candidate.commands : [];
+      if (!commands.length) {
+        return `<div class="eval-command"><div class="eval-command-head"><span>${escapeHtml(label)}</span><span>No commands recorded</span></div></div>`;
+      }
+      return commands.map(command => renderEvalCommand(label, command)).join("");
+    }
+
+    function renderEvalCommand(label, command) {
+      const passed = Boolean(command.passed);
+      const output = [command.stdout, command.stderr].filter(Boolean).join("\n\n--- stderr ---\n\n");
+      const commandText = Array.isArray(command.command) ? command.command.join(" ") : (command.command || "-");
+      const outputLabel = passed ? "Captured stdout/stderr" : "Failure output";
+      const outputBlock = output
+        ? (passed
+          ? `<details><summary>${escapeHtml(outputLabel)}</summary><pre>${escapeHtml(output)}</pre></details>`
+          : `<div class="trace-raw-label">${escapeHtml(outputLabel)}</div><pre>${escapeHtml(output)}</pre>`)
+        : `<div class="trace-empty">No stdout or stderr.</div>`;
+      return `
+        <div class="eval-command ${passed ? "passed" : "failed"}">
+          <div class="eval-command-head">
+            <span>${escapeHtml(label)} / ${escapeHtml(command.name || "command")}</span>
+            <span>${passed ? "PASS" : "FAIL"} / exit ${escapeHtml(command.exit_code == null ? "-" : command.exit_code)} / ${escapeHtml(formatSeconds(command.duration_seconds || 0))}</span>
+          </div>
+          <div class="trace-meta">${escapeHtml(commandText)}</div>
+          ${outputBlock}
+        </div>
+      `;
+    }
+
+    function findEvalCommand(candidate, name) {
+      const commands = Array.isArray(candidate.commands) ? candidate.commands : [];
+      return commands.find(command => command.name === name) || {};
+    }
+
+    function parsePytestCounts(output) {
+      const text = String(output || "");
+      const line = text.split(/\r?\n/).reverse().find(item =>
+        /passed|failed|error|errors|skipped/.test(item) && /\bin\b/.test(item)
+      );
+      return normalizedTestCounts(line || "");
+    }
+
+    function normalizedTestCounts(value) {
+      if (value && typeof value === "object") {
+        return {
+          passed: Number(value.passed || 0),
+          failed: Number(value.failed || 0),
+          errors: Number(value.errors || value.error || 0),
+          skipped: Number(value.skipped || 0),
+        };
+      }
+      const text = String(value || "").replace(/=+/g, " ");
+      return {
+        passed: countFromSummaryText(text, "passed"),
+        failed: countFromSummaryText(text, "failed"),
+        errors: countFromSummaryText(text, "error") + countFromSummaryText(text, "errors"),
+        skipped: countFromSummaryText(text, "skipped"),
+      };
+    }
+
+    function countFromSummaryText(text, word) {
+      const pattern = new RegExp(`(\\d+)\\s+${word}\\b`, "g");
+      let total = 0;
+      let match;
+      while ((match = pattern.exec(String(text || ""))) !== null) {
+        total += Number(match[1] || 0);
+      }
+      return total;
+    }
+
+    function hiddenTestTotal(counts) {
+      return Number(counts.passed || 0) + Number(counts.failed || 0) + Number(counts.errors || 0);
+    }
+
+    function hiddenPassRatio(counts) {
+      const total = hiddenTestTotal(counts);
+      if (!total) return 0;
+      return Number(counts.passed || 0) / total;
+    }
+
+    function summarizeFailureOutput(output) {
+      const text = String(output || "").replace(/\r\n/g, "\n");
+      const lines = text.split("\n");
+      const failureLines = lines.filter(line =>
+        /^(FAILED|ERROR)|ImportError|AttributeError|AssertionError|E\s+/.test(line.trim())
+      );
+      return (failureLines.slice(0, 6).join(" | ") || lines.slice(-8).join(" | ")).slice(0, 1200);
+    }
+
+    function formatNumber(value) {
+      const numeric = Number(value);
+      if (!Number.isFinite(numeric)) return String(value);
+      return numeric.toFixed(2).replace(/\.00$/, "");
+    }
+
+    function formatPercent(value) {
+      const numeric = Number(value);
+      if (!Number.isFinite(numeric)) return "-";
+      return `${(numeric * 100).toFixed(1).replace(/\.0$/, "")}%`;
     }
 
     function localRuntimeOutput(result) {

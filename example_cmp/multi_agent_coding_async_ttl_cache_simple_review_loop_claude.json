@@ -1,0 +1,178 @@
+{
+  "id": "multi-agent-coding-async-ttl-cache-simple-review-loop-claude",
+  "name": "多 Claude 简化循环审查编码示例 - AsyncTTLCache 小库实现",
+  "graph_type": "control_flow",
+  "default_join": "all",
+  "max_total_visits": 12,
+  "input": {
+    "task": "请实现一个可复用的 Python 小库 `maos_cache.py`，提供生产可用的 `AsyncTTLCache` 与同步/异步装饰器能力。必须使用标准库实现。公共 API 契约必须包含：`AsyncTTLCache`、`CacheInfo`、`ttl_cache`、`async_ttl_cache`；`AsyncTTLCache` 至少提供 `get_or_set`、`aget_or_set`、`invalidate`、`clear`、`cache_info`。要求支持 TTL 过期、maxsize LRU 淘汰、异常结果不缓存、同 key 并发异步调用 single-flight 去重、cache_info 统计 hits/misses/evictions/inflight/size。最终交付只需要完整 `maos_cache.py` 主体代码、设计说明和最小可运行使用示例；不要生成 pytest、unittest 或任何测试文件代码。"
+  },
+  "start": "api_contract_architect",
+  "nodes": [
+    {
+      "id": "api_contract_architect",
+      "label": "公共 API 契约与验收标准",
+      "operation": "agent_task",
+      "max_visits": 1,
+      "agent": {
+        "backend": "claude",
+        "agent_key": "architect",
+        "context_policy": "provided_context_only",
+        "runtime_profile": "claude_print",
+        "execution_mode": "claude_print",
+        "poll_seconds": 30,
+        "timeout_seconds": 1800,
+        "artifact_transfer_mode": "inline",
+        "result_text_limit": 12000,
+        "prompt_payload_limit": 24000,
+        "bare": true,
+        "prompt": "你是 Python 库架构师。请输出一份不可变更的公共 API 契约和验收标准。必须明确：1) 模块名 `maos_cache.py`；2) 必须导出的符号：`AsyncTTLCache`、`CacheInfo`、`ttl_cache`、`async_ttl_cache`；3) `AsyncTTLCache` 必须提供的方法：`get_or_set`、`aget_or_set`、`invalidate`、`clear`、`cache_info`；4) `ttl_cache` 用于同步函数装饰器，`async_ttl_cache` 用于 async 函数装饰器，命名不得替换为 cached/acached/async_cache；5) `get_or_set` 是同步接口，`aget_or_set` 是异步接口且必须支持同 key single-flight；6) cache_info 统计语义：并发等待同一个 inflight 结果的 awaiter 应计入 hits，首个启动 factory 的调用计入 misses；7) TTL 过期不计 eviction，maxsize LRU 淘汰才计 eviction；8) factory 抛异常时不得缓存，且必须清理 inflight；9) clear/invalidate 的语义边界；10) 隐藏测试可能通过 public import 验证接口，不允许改名或删除。请用结构化 Markdown 输出，并单独给出一个 `public_api_contract` JSON 代码块，方便下游严格引用。不要写完整实现代码。"
+      },
+      "timeout_seconds": 2100
+    },
+    {
+      "id": "core_implementation",
+      "label": "核心实现编码与修订",
+      "operation": "agent_task",
+      "join": "any",
+      "max_visits": 3,
+      "deps": [
+        "api_contract_architect",
+        "quality_review_gate"
+      ],
+      "agent": {
+        "backend": "claude",
+        "agent_key": "coding",
+        "context_policy": "provided_context_only",
+        "runtime_profile": "claude_print",
+        "execution_mode": "claude_print",
+        "poll_seconds": 30,
+        "timeout_seconds": 3000,
+        "artifact_transfer_mode": "inline",
+        "result_text_limit": 26000,
+        "prompt_payload_limit": 56000,
+        "bare": true,
+        "prompt": "你是 Python 核心实现工程师。请严格基于 `api_contract_architect` 的公共 API 契约实现 `maos_cache.py`，不得改名、合并或替换公共 API。首次执行时输出完整 `maos_cache.py` 主体代码，并附最小可运行使用示例；不要生成 pytest、unittest 或任何测试文件代码。若上游节点结果中包含 `core_implementation`，它是你上一轮生成的待改进版本，必须以该版本为基础做定向修订，而不是从零重写。若上游包含 `quality_review_gate` 的 `decision=needs_revision`，必须逐条吸收 `implementation_required_changes`、`concurrency_required_changes`、`boundary_required_changes`、`api_contract_violations` 和 `acceptance_checks`，输出修订后的完整 `maos_cache.py`，不要只输出 diff。必须重点保证：1) `from maos_cache import AsyncTTLCache, CacheInfo, ttl_cache, async_ttl_cache` 成立；2) `AsyncTTLCache.get_or_set` 同步可用；3) `AsyncTTLCache.aget_or_set` 对同 key 并发 async 调用 single-flight，只执行一次 factory，其余 awaiter 等待同一个结果；4) 并发等待者计入 hits，首个 factory 调用计入 misses；5) TTL 过期、LRU 淘汰、异常不缓存、clear/invalidate、cache_info 语义正确；6) 仅使用标准库。最终输出代码块必须完整可复制。"
+      },
+      "timeout_seconds": 3300
+    },
+    {
+      "id": "quality_review_gate",
+      "label": "实现正确性深度审查门",
+      "operation": "agent_task",
+      "join": "all",
+      "max_visits": 3,
+      "deps": [
+        "core_implementation"
+      ],
+      "agent": {
+        "backend": "claude",
+        "agent_key": "reviewer",
+        "context_policy": "provided_context_only",
+        "runtime_profile": "claude_print",
+        "execution_mode": "claude_print",
+        "poll_seconds": 30,
+        "timeout_seconds": 2400,
+        "artifact_transfer_mode": "inline",
+        "result_text_limit": 14000,
+        "prompt_payload_limit": 70000,
+        "strict_structured_output": true,
+        "risk_pass_requires_final_visit": true,
+        "required_structured_output_fields": [
+          "decision",
+          "reason",
+          "required_changes",
+          "api_contract_violations",
+          "implementation_required_changes",
+          "concurrency_required_changes",
+          "boundary_required_changes",
+          "acceptance_checks",
+          "risks"
+        ],
+        "bare": true,
+        "prompt": "你是严格的 Python 实现正确性审查门。只审查 `core_implementation` 的最终实现是否满足 `api_contract_architect` 的公共 API 契约和原始任务。请先读取节点上下文中的 `control_flow.visit` 作为当前审查轮次，不能臆测轮次。你不需要审查单独测试节点，因为本图没有测试工程师节点；你的职责是深入审查编码实现本身。审查维度必须包括：1) 公共 API 契约：`AsyncTTLCache`、`CacheInfo`、`ttl_cache`、`async_ttl_cache` 是否导出，是否误改名为 cached/acached/async_cache；2) 方法契约：`get_or_set`、`aget_or_set`、`invalidate`、`clear`、`cache_info` 是否存在且语义正确；3) 并发正确性：同 key 异步并发 single-flight 是否只执行一次 factory，awaiter 是否共享结果，异常是否传播并清理 inflight，取消/异常路径是否泄漏 Future；4) cache_info 统计：首个 factory 是 miss，并发等待者是 hits，inflight 完成后归零；5) TTL 与 LRU：TTL 过期不计 eviction，maxsize LRU 淘汰才计 eviction，hit 后是否更新 LRU 顺序；6) 边界：ttl=0、maxsize=0、负参数、不可哈希 key、自定义 key_builder、clear/invalidate 与 inflight 交互；7) 异常：factory 抛异常不能缓存，后续调用必须重试；8) 标准库约束和代码可复制性。最终只能输出一个合法 JSON 对象，不能输出 markdown、解释、思考过程或额外文字。格式严格如下：{\"decision\":\"approved、needs_revision 或 approved_with_risk\",\"reason\":\"一句中文审查结论\",\"required_changes\":[\"总体必须修改事项；通过时为空数组\"],\"api_contract_violations\":[\"公共 API 契约违背项；没有则为空数组\"],\"implementation_required_changes\":[\"一般实现修订项；没有则为空数组\"],\"concurrency_required_changes\":[\"并发/single-flight/异常传播修订项；没有则为空数组\"],\"boundary_required_changes\":[\"TTL/LRU/边界/统计语义修订项；没有则为空数组\"],\"acceptance_checks\":[\"下一轮必须满足的验收断言；通过时也要保留关键断言\"],\"risks\":[\"带风险通过时必须列出遗留风险；其他情况可为空数组\"],\"confidence\":0.0}。当 `control_flow.visit` 小于 3 时：禁止输出 approved_with_risk；只要任一问题字段非空，就必须输出 needs_revision。当 `control_flow.visit` 小于 3 时，只有实现完整满足 API、并发、边界和统计语义且问题字段均为空，才允许输出 approved。当 `control_flow.visit` 等于 3 时：不允许输出 needs_revision；如果仍有非阻塞遗留问题，请输出 approved_with_risk，并把遗留问题放入 risks、required_changes 和对应分类字段；如果没有遗留问题，输出 approved。"
+      },
+      "timeout_seconds": 2700
+    },
+    {
+      "id": "final_integrator",
+      "label": "最终代码交付",
+      "operation": "agent_task",
+      "join": "any",
+      "deps": [
+        "api_contract_architect",
+        "core_implementation",
+        "quality_review_gate"
+      ],
+      "agent": {
+        "backend": "claude",
+        "agent_key": "coordinator",
+        "context_policy": "provided_context_only",
+        "runtime_profile": "claude_print",
+        "execution_mode": "claude_print",
+        "poll_seconds": 30,
+        "timeout_seconds": 3000,
+        "artifact_transfer_mode": "inline",
+        "result_text_limit": 32000,
+        "prompt_payload_limit": 90000,
+        "bare": true,
+        "prompt": "你是最终代码交付工程师。只有在 `quality_review_gate` 的 `decision=approved` 或 `decision=approved_with_risk` 后才执行。请基于最新一轮 `core_implementation` 和审查门结果交付：1) 完整 `maos_cache.py` 主体代码；2) 公共 API 契约对照表，逐项说明 `AsyncTTLCache`、`CacheInfo`、`ttl_cache`、`async_ttl_cache`、`get_or_set`、`aget_or_set`、`invalidate`、`clear`、`cache_info` 是否满足；3) 并发、TTL/LRU、异常不缓存、统计语义的设计说明；4) 最小可运行使用示例；5) 如果是 `approved_with_risk`，必须单独列出遗留风险、影响范围和后续修复建议。不要生成 pytest、unittest 或任何测试文件代码。不得重新设计或重命名公共 API；如果上游实现命名不符合契约，最终交付必须修正为契约命名。代码块必须完整可复制，不要省略。"
+      },
+      "timeout_seconds": 3300
+    }
+  ],
+  "edges": [
+    {
+      "from": "api_contract_architect",
+      "to": "core_implementation",
+      "label": "API 契约驱动实现"
+    },
+    {
+      "from": "core_implementation",
+      "to": "quality_review_gate",
+      "label": "提交实现深度审查"
+    },
+    {
+      "from": "quality_review_gate",
+      "to": "core_implementation",
+      "when": "(last.decision == 'needs_revision' or last.decision == 'approved_with_risk') and visits.quality_review_gate < 3",
+      "kind": "loop",
+      "label": "前两轮审查未通过：回退核心实现"
+    },
+    {
+      "from": "quality_review_gate",
+      "to": "final_integrator",
+      "when": "last.decision == 'approved'",
+      "kind": "branch",
+      "label": "审查通过：最终交付"
+    },
+    {
+      "from": "quality_review_gate",
+      "to": "final_integrator",
+      "when": "last.decision == 'approved_with_risk' and visits.quality_review_gate >= 3",
+      "kind": "branch",
+      "label": "第三轮带风险通过：最终交付"
+    }
+  ],
+  "description": "更简单的多 Agent 循环编码图：去掉独立测试用例设计节点，只保留 API 契约、核心实现、深度审查门和最终交付。审查门专注实现正确性、公共 API、并发、边界和统计语义，并在前两轮不通过时直接回退核心实现。",
+  "metadata": {
+    "comparison_group": "coding_async_ttl_cache",
+    "comparison_role": "multi_agent_simple_review_loop",
+    "backend_variant": "claude",
+    "loop_policy": {
+      "review_node": "quality_review_gate",
+      "pass_decision": "approved",
+      "risk_pass_decision": "approved_with_risk",
+      "retry_decision": "needs_revision",
+      "max_review_visits": 3,
+      "max_revision_visits": 3,
+      "retry_allowed_until_review_visit": 2
+    },
+    "expected_advantage": [
+      "没有独立测试节点，图结构更短，反馈直接作用到核心实现",
+      "审查门专注实现正确性、公共 API 契约、并发 single-flight 和边界语义",
+      "前两轮任何带风险通过都会被回退为修订，第三轮才允许带风险交付",
+      "最终交付必须对照 API 契约，不允许重命名公共接口"
+    ]
+  }
+}

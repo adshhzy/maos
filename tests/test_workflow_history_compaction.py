@@ -1,9 +1,9 @@
 import unittest
 
-from maos_runtime.workflows.json_dag import (
+from maos_runtime.workflows.history_compaction import (
     WORKFLOW_HISTORY_TEXT_LIMIT,
-    _compact_dependency_executions_for_activity,
-    _compact_execution_for_history,
+    compact_dependency_executions_for_activity,
+    compact_execution_for_history,
 )
 
 
@@ -34,7 +34,7 @@ class WorkflowHistoryCompactionTests(unittest.TestCase):
             },
         }
 
-        compact = _compact_execution_for_history(execution)
+        compact = compact_execution_for_history(execution)
 
         payload = compact["result"]["payload"]
         self.assertLess(len(payload["latest_comment"]), len(long_text))
@@ -46,7 +46,7 @@ class WorkflowHistoryCompactionTests(unittest.TestCase):
 
     def test_compacts_dependency_executions_before_activity_schedule(self) -> None:
         long_text = "x" * (WORKFLOW_HISTORY_TEXT_LIMIT + 500)
-        compact = _compact_dependency_executions_for_activity(
+        compact = compact_dependency_executions_for_activity(
             {
                 "upstream": {
                     "status": "completed",

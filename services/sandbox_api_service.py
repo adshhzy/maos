@@ -18,7 +18,9 @@ from maos_runtime.sandbox_runtime import (
     ControlFlowTaskService,
 )
 from maos_runtime.graph.schema import GraphValidationError
+from maos_runtime.sandbox.preview import preview_state
 from web.sandbox_api_server import list_examples, load_graph
+from web.markdown_export import export_task_markdown
 from web.web_agent_api import (
     build_agent_input,
     build_agent_trace,
@@ -72,6 +74,11 @@ class HumanResponseRequest(BaseModel):
 class HumanResponseEnvelope(BaseModel):
     ok: bool
     event: dict[str, Any]
+
+
+class MarkdownExportRequest(BaseModel):
+    output_dir: str | None = None
+    node_id: str | None = None
 
 
 def create_app(config: SandboxApiConfig | None = None) -> FastAPI:
@@ -166,12 +173,39 @@ def create_app(config: SandboxApiConfig | None = None) -> FastAPI:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         return {"ok": True, "task_ids": task_ids}
 
+    @app.post("/api/preview", tags=["tasks"])
+    def preview_tasks(payload: TaskBatchRequest | list[dict[str, Any]] = Body(...)) -> dict[str, Any]:
+        graphs = _graphs_from_payload(payload)
+        try:
+            return {"ok": True, "previews": [preview_state(graph) for graph in graphs]}
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
     @app.get("/api/tasks/{task_id}", tags=["tasks"])
     def get_task(task_id: str) -> dict[str, Any]:
         try:
             return _manager().task_snapshot(task_id)
         except KeyError as exc:
             raise HTTPException(status_code=404, detail=f"Task not found: {task_id}") from exc
+
+    @app.post("/api/tasks/{task_id}/export-markdown", tags=["tasks"])
+    def export_markdown(
+        task_id: str,
+        payload: MarkdownExportRequest | None = Body(default=None),
+    ) -> dict[str, Any]:
+        try:
+            task = _manager().task_snapshot(task_id)
+            return export_task_markdown(
+                task,
+                output_dir=(payload.output_dir if payload else None),
+                node_id=(payload.node_id if payload else None),
+            )
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=f"Task not found: {task_id}") from exc
+        except FileNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     @app.post("/api/agent-callbacks", response_model=AgentEventResponse, tags=["events"])
     @app.post("/api/v1/agent-events", response_model=AgentEventResponse, tags=["events"])

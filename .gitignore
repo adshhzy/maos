@@ -15,6 +15,12 @@ runtime_logs/
 .runtime_logs/
 logs/
 tmp_*
+D*tmp_*
+nul
+.maos_public_web_credential.json
+cloudflared-public-webui.pid
+tools/cloudflared.exe
+/maos_cache.py
 
 # Local generated task/demo outputs
 business_analyst_*.json

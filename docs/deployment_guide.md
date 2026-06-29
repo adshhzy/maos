@@ -73,9 +73,9 @@ python sandbox_service.py
 | Temporal gRPC | `7233` |
 | Temporal UI | `8233` |
 | Temporal DB | `D:\dev\MAOS\temporal-data\temporal.db` |
-| A2A 幂等注册表 | `D:\dev\MAOS\temporal-data\a2a-invocations.json` |
+| Provider Task DB | `D:\dev\MAOS\temporal-data\maos_runtime.db` |
 
-生产或长期运行时，建议把 `temporal-data` 放在单独的数据盘，并定期备份 `temporal.db` 和 `a2a-invocations.json`。
+生产或长期运行时，建议把 `temporal-data` 放在单独的数据盘，并定期备份 `temporal.db` 和 `maos_runtime.db`。`a2a-invocations.json` 仅作为旧版本兼容镜像，不再作为恢复或排查的默认数据源。
 
 ## 4. 打包代码
 
@@ -264,6 +264,6 @@ http://127.0.0.1:8765/
 
 - 用外部 Temporal Server 替代内嵌 dev server。
 - 用进程管理器托管服务，例如 Windows Task Scheduler、NSSM、systemd 或 Docker。
-- 将 `Temporal DB`、`A2A_INVOCATION_REGISTRY_FILE` 和服务日志放到专门的数据目录。
+- 将 `Temporal DB`、`A2A_PROVIDER_TASK_DB_FILE` 和服务日志放到专门的数据目录。
 - 对 Agent Service、Sandbox API 加认证和反向代理，不要直接暴露到公网。
 - 为大规模并发配置真实 Temporal 集群、数据库、指标监控和日志采集。

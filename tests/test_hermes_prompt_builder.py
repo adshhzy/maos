@@ -140,6 +140,40 @@ class HermesPromptBuilderTests(unittest.TestCase):
 
         self.assertIn("...<truncated>", prompt)
 
+    def test_hermes_prompt_explains_previous_self_result_for_loop_revision(self) -> None:
+        prompt = _hermes_prompt(
+            {
+                "id": "core_implementation",
+                "operation": "agent_task",
+                "control_flow": {
+                    "visit": 2,
+                    "previous_self_result_node": "core_implementation",
+                },
+                "agent": {"prompt": "修订上一轮实现。"},
+            },
+            {
+                "core_implementation": {
+                    "node": "core_implementation",
+                    "operation": "agent_task",
+                    "payload": {"latest_comment": "上一轮 maos_cache.py 代码"},
+                },
+                "quality_review_gate": {
+                    "node": "quality_review_gate",
+                    "operation": "agent_task",
+                    "payload": {"decision": "needs_revision"},
+                },
+            },
+            {"task": "demo"},
+            workflow_id="workflow-test",
+            a2a_task_id="a2a-task-test",
+            context_policy="provided_context_only",
+            runtime_profile="hermes_oneshot",
+        )
+
+        self.assertIn("## 循环修订上下文", prompt)
+        self.assertIn("上一轮执行输出", prompt)
+        self.assertIn("上一轮 maos_cache.py 代码", prompt)
+
 
 class MulticaDescriptionBuilderTests(unittest.TestCase):
     def test_multica_description_uses_business_context_sections(self) -> None:
@@ -204,6 +238,33 @@ class MulticaDescriptionBuilderTests(unittest.TestCase):
 
         self.assertIn(long_output, description)
         self.assertNotIn("...<truncated>", description)
+
+    def test_multica_description_explains_previous_self_result_for_loop_revision(self) -> None:
+        description = _multica_description(
+            {
+                "id": "core_implementation",
+                "operation": "agent_task",
+                "control_flow": {
+                    "visit": 2,
+                    "previous_self_result_node": "core_implementation",
+                },
+                "agent": {"prompt": "修订上一轮实现。"},
+            },
+            {
+                "core_implementation": {
+                    "node": "core_implementation",
+                    "operation": "agent_task",
+                    "payload": {"latest_comment": "上一轮 maos_cache.py 代码"},
+                }
+            },
+            {"task": "demo"},
+            workflow_id="workflow-test",
+            a2a_task_id="a2a-task-test",
+        )
+
+        self.assertIn("## 循环修订上下文", description)
+        self.assertIn("上一轮执行输出", description)
+        self.assertIn("上一轮 maos_cache.py 代码", description)
 
 
 if __name__ == "__main__":

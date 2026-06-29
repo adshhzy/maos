@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
+from web.markdown_export import export_task_markdown
 from web.web_agent_api import build_agent_input, build_agent_trace
 from web.web_ui import INDEX_HTML
 
@@ -112,6 +113,30 @@ def make_handler(
                     self._send_json({"ok": False, "error": str(exc)}, status=400)
                     return
                 self._send_json({"ok": True, "event": event})
+                return
+
+            if parsed.path.startswith("/api/tasks/") and parsed.path.endswith("/export-markdown"):
+                try:
+                    content_length = int(self.headers.get("Content-Length", "0"))
+                    raw_body = self.rfile.read(content_length)
+                    payload = json.loads(raw_body.decode("utf-8") or "{}")
+                    task_id = parsed.path.removeprefix("/api/tasks/").removesuffix("/export-markdown")
+                    task = manager.task_snapshot(task_id)
+                    result = export_task_markdown(
+                        task,
+                        output_dir=payload.get("output_dir") if isinstance(payload, dict) else None,
+                        node_id=payload.get("node_id") if isinstance(payload, dict) else None,
+                    )
+                except KeyError:
+                    self.send_error(404)
+                    return
+                except FileNotFoundError as exc:
+                    self._send_json({"ok": False, "error": str(exc)}, status=404)
+                    return
+                except Exception as exc:
+                    self._send_json({"ok": False, "error": str(exc)}, status=400)
+                    return
+                self._send_json(result)
                 return
 
             if parsed.path not in {"/run-batch", "/api/tasks"}:

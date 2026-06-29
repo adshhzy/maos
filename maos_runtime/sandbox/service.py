@@ -35,6 +35,11 @@ from maos_runtime.sandbox.constants import (
     WORKFLOW_RESULT_TIMEOUT_SECONDS,
 )
 from maos_runtime.sandbox.identifiers import _task_id_for_graph
+from maos_runtime.sandbox.task_archive import (
+    load_archived_task,
+    merge_visible_tasks,
+    prefer_archived_task,
+)
 
 
 class TemporalTaskService:
@@ -260,7 +265,7 @@ class TemporalTaskService:
             "runtime_status": runtime_status,
             "error": error,
             "temporal": self._temporal_info(),
-            "tasks": [_task_list_item_for_api(task) for task in tasks],
+            "tasks": merge_visible_tasks(tasks),
         }
 
     async def _task_snapshot(self, task_id: str) -> dict[str, Any]:
@@ -270,12 +275,17 @@ class TemporalTaskService:
         try:
             description = await handle.describe()
         except Exception as exc:
+            archived = load_archived_task(task_id)
+            if archived:
+                return archived
             raise KeyError(task_id) from exc
 
         status = _status_from_raw_description(description)
         if status in {"completed", "failed", "cancelled", "terminated", "timed_out"}:
-            return await self._closed_task_from_handle(task_id, handle, status)
-        return await self._running_task_from_handle(task_id, handle)
+            task = await self._closed_task_from_handle(task_id, handle, status)
+        else:
+            task = await self._running_task_from_handle(task_id, handle)
+        return prefer_archived_task(task, load_archived_task(task_id))
 
     async def _list_dag_workflows(self) -> list[Any]:
         assert self._client is not None

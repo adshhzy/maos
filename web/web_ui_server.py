@@ -1,4 +1,6 @@
 import json
+import base64
+import hmac
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
@@ -23,14 +25,23 @@ def make_web_ui_handler(
     *,
     sandbox_api_base: str,
     static_dir: Path | None = None,
+    auth_username: str | None = None,
+    auth_password: str | None = None,
 ) -> type[BaseHTTPRequestHandler]:
     """Serve the dashboard and proxy API calls to the sandbox API service."""
 
     static_root = static_dir or Path(__file__).resolve().parent / "static"
     api_base = sandbox_api_base.rstrip("/") + "/"
+    auth_enabled = bool(auth_username and auth_password)
+    expected_auth = ""
+    if auth_enabled:
+        token = f"{auth_username}:{auth_password}".encode("utf-8")
+        expected_auth = "Basic " + base64.b64encode(token).decode("ascii")
 
     class Handler(BaseHTTPRequestHandler):
         def do_HEAD(self) -> None:
+            if not self._require_auth():
+                return
             parsed = urlparse(self.path)
             if parsed.path in {"/", "/index.html"}:
                 self.send_response(200)
@@ -45,6 +56,8 @@ def make_web_ui_handler(
             self.send_error(404)
 
         def do_GET(self) -> None:
+            if not self._require_auth():
+                return
             parsed = urlparse(self.path)
             if _should_proxy(parsed.path):
                 self._proxy()
@@ -65,6 +78,8 @@ def make_web_ui_handler(
             self.send_error(404)
 
         def do_POST(self) -> None:
+            if not self._require_auth():
+                return
             parsed = urlparse(self.path)
             if _should_proxy(parsed.path):
                 self._proxy()
@@ -80,6 +95,22 @@ def make_web_ui_handler(
 
         def log_message(self, format: str, *args: Any) -> None:
             return
+
+        def _require_auth(self) -> bool:
+            if not auth_enabled:
+                return True
+            provided = self.headers.get("Authorization", "")
+            if hmac.compare_digest(provided, expected_auth):
+                return True
+            payload = b"Authentication required"
+            self.send_response(401)
+            self.send_header("WWW-Authenticate", 'Basic realm="MAOS Web UI"')
+            self.send_header("Content-Type", "text/plain; charset=utf-8")
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("Content-Length", str(len(payload)))
+            self.end_headers()
+            self.wfile.write(payload)
+            return False
 
         def _send_html(self, body: str) -> None:
             encoded = body.encode("utf-8")
@@ -190,8 +221,15 @@ def start_web_ui_server(
     *,
     sandbox_api_base: str,
     static_dir: Path | None = None,
+    auth_username: str | None = None,
+    auth_password: str | None = None,
 ) -> ThreadingHTTPServer:
     return ThreadingHTTPServer(
         (host, port),
-        make_web_ui_handler(sandbox_api_base=sandbox_api_base, static_dir=static_dir),
+        make_web_ui_handler(
+            sandbox_api_base=sandbox_api_base,
+            static_dir=static_dir,
+            auth_username=auth_username,
+            auth_password=auth_password,
+        ),
     )

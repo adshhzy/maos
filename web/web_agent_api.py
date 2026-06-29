@@ -62,6 +62,18 @@ def build_agent_input(task_id: str) -> dict[str, Any]:
 
 def build_local_runtime_input(task_id: str, backend: str) -> dict[str, Any]:
     normalized = str(backend or "").strip().lower().replace("_", "-")
+    if normalized == "evaluator":
+        report = _evaluator_runtime_report(task_id)
+        config = report.get("config") or report.get("evaluation_config") or {}
+        prompt = json.dumps(config, ensure_ascii=False, indent=2)
+        return {
+            "ok": True,
+            "backend": normalized,
+            "task_id": task_id,
+            "prompt_file": _provider_task_store_file(),
+            "prompt_chars": len(prompt),
+            "agent_input": extract_agent_input({"description": prompt}),
+        }
     run_dir = _local_runtime_run_dir(task_id, normalized)
     prompt_file = (run_dir / "prompt.md").resolve()
     if not prompt_file.is_file():
@@ -80,16 +92,22 @@ def build_local_runtime_input(task_id: str, backend: str) -> dict[str, Any]:
 
 def build_local_runtime_output(task_id: str, backend: str) -> dict[str, Any]:
     normalized = str(backend or "").strip().lower().replace("_", "-")
-    run_dir = _local_runtime_run_dir(task_id, normalized)
+    report: dict[str, Any] | None = None
     if normalized in {"claude", "claude-cli"}:
+        run_dir = _local_runtime_run_dir(task_id, normalized)
         output_file = (run_dir / "stdout.json").resolve()
         output = _claude_runtime_output(output_file)
     elif normalized in {"codex", "codex-cli"}:
+        run_dir = _local_runtime_run_dir(task_id, normalized)
         output_file = (run_dir / "final_output.md").resolve()
         output = output_file.read_text(encoding="utf-8", errors="replace") if output_file.is_file() else ""
         if not output.strip():
             output_file = (run_dir / "stdout.jsonl").resolve()
             output = _codex_runtime_output(output_file)
+    elif normalized == "evaluator":
+        report = _evaluator_runtime_report(task_id)
+        output_file = Path(_provider_task_store_file()).resolve()
+        output = str(report.get("markdown") or json.dumps(report, ensure_ascii=False, indent=2))
     else:
         raise ValueError(f"Unsupported local runtime backend: {backend}")
     if not output_file.is_file():
@@ -108,6 +126,7 @@ def build_local_runtime_output(task_id: str, backend: str) -> dict[str, Any]:
             "chars": len(output),
             "approx_tokens": max(1, (len(output) + 3) // 4) if output else 0,
         },
+        **({"evaluation_report": report} if report is not None else {}),
     }
 
 
@@ -149,3 +168,57 @@ def _codex_runtime_output(stdout_file: Path) -> str:
         if '"message"' in line or '"content"' in line or '"text"' in line:
             return line
     return stdout
+
+
+def _evaluator_runtime_report(task_id: str) -> dict[str, Any]:
+    task = _task_from_provider_task_store(task_id)
+    artifacts = task.get("artifacts") if isinstance(task, dict) else None
+    if not isinstance(artifacts, list):
+        raise FileNotFoundError(f"Evaluator task artifact not found: {task_id}")
+    for artifact in artifacts:
+        for part in artifact.get("parts", []) if isinstance(artifact, dict) else []:
+            data = part.get("data") if isinstance(part, dict) else None
+            if not isinstance(data, dict):
+                continue
+            report = data.get("report")
+            if isinstance(report, dict):
+                return {
+                    **report,
+                    "config": (task.get("metadata") or {}).get("evaluationConfig", {}),
+                    "evaluation_task_id": task_id,
+                }
+            if data.get("agent_backend") == "evaluator":
+                return {
+                    "status": data.get("status"),
+                    "benchmark_id": data.get("benchmark_id"),
+                    "winner": data.get("winner"),
+                    "score_delta": data.get("score_delta"),
+                    "single": data.get("single"),
+                    "multi": data.get("multi"),
+                    "markdown": data.get("latest_comment") or data.get("stdout") or "",
+                    "config": (task.get("metadata") or {}).get("evaluationConfig", {}),
+                    "evaluation_task_id": task_id,
+                }
+    raise FileNotFoundError(f"Evaluator report not found: {task_id}")
+
+
+def _task_from_provider_task_store(task_id: str) -> dict[str, Any]:
+    if not re.fullmatch(r"[A-Za-z0-9_.:-]+", task_id):
+        raise ValueError("Invalid local runtime task id")
+    try:
+        from maos_runtime.a2a_task_store import task_record_for_provider_task_id
+
+        record = task_record_for_provider_task_id(task_id)
+    except Exception as exc:
+        raise FileNotFoundError(f"Provider task store could not be queried: {task_id}") from exc
+    if isinstance(record, dict):
+        task = record.get("task")
+        if isinstance(task, dict):
+            return task
+    raise FileNotFoundError(f"Local runtime task not found in provider task store: {task_id}")
+
+
+def _provider_task_store_file() -> str:
+    from maos_runtime.a2a_task_store import provider_task_db_file
+
+    return provider_task_db_file()

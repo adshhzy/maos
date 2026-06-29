@@ -10,6 +10,7 @@ from maos_runtime.a2a.claude_backend import (
     _claude_completion_error,
     _claude_output,
     _display_command,
+    _enforce_control_flow_decision_policy,
 )
 
 
@@ -94,6 +95,42 @@ class ClaudeProviderTests(unittest.TestCase):
         self.assertTrue(capabilities["providers"]["claude"]["operations"]["create"])
         self.assertTrue(capabilities["providers"]["claude"]["operations"]["poll"])
         self.assertTrue(capabilities["providers"]["claude"]["operations"]["cancel"])
+
+    def test_early_risk_pass_is_routed_as_revision_when_configured(self) -> None:
+        adjusted = _enforce_control_flow_decision_policy(
+            {
+                "decision": "approved_with_risk",
+                "reason": "tests are broken",
+                "required_changes": ["fix tests"],
+                "risks": ["test suite cannot run"],
+            },
+            {
+                "riskPassRequiresFinalVisit": True,
+                "controlFlowVisit": 1,
+                "controlFlowMaxVisits": 3,
+            },
+        )
+
+        self.assertEqual(adjusted["decision"], "needs_revision")
+        self.assertEqual(adjusted["original_decision"], "approved_with_risk")
+
+    def test_final_visit_risk_pass_is_preserved_when_configured(self) -> None:
+        adjusted = _enforce_control_flow_decision_policy(
+            {
+                "decision": "approved_with_risk",
+                "reason": "last pass with residual risk",
+                "required_changes": ["document residual risk"],
+                "risks": ["non-blocking limitation"],
+            },
+            {
+                "riskPassRequiresFinalVisit": True,
+                "controlFlowVisit": 3,
+                "controlFlowMaxVisits": 3,
+            },
+        )
+
+        self.assertEqual(adjusted["decision"], "approved_with_risk")
+        self.assertNotIn("original_decision", adjusted)
 
 
 if __name__ == "__main__":

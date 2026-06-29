@@ -6,6 +6,7 @@ from typing import Any
 from urllib.parse import parse_qs, urlparse
 
 from maos_runtime.a2a.codex_pool import codex_runtime_pool_status
+from web.markdown_export import export_task_markdown
 from web.web_agent_api import build_agent_input, build_agent_trace
 
 
@@ -64,6 +65,9 @@ def make_sandbox_api_handler(
             if parsed.path in {"/api/agent-callbacks", "/api/v1/agent-events"}:
                 self._handle_agent_callback()
                 return
+            if parsed.path.startswith("/api/tasks/") and parsed.path.endswith("/export-markdown"):
+                self._export_markdown(parsed)
+                return
             if parsed.path in {"/run-batch", "/api/tasks"}:
                 self._submit_tasks()
                 return
@@ -113,6 +117,27 @@ def make_sandbox_api_handler(
                 self._send_json({"ok": False, "error": str(exc)}, status=400)
                 return
             self._send_json({"ok": True, "event": event})
+
+        def _export_markdown(self, parsed: Any) -> None:
+            try:
+                task_id = parsed.path.removeprefix("/api/tasks/").removesuffix("/export-markdown")
+                payload = self._read_json_body()
+                task = manager.task_snapshot(task_id)
+                result = export_task_markdown(
+                    task,
+                    output_dir=payload.get("output_dir") if isinstance(payload, dict) else None,
+                    node_id=payload.get("node_id") if isinstance(payload, dict) else None,
+                )
+            except KeyError:
+                self.send_error(404)
+                return
+            except FileNotFoundError as exc:
+                self._send_json({"ok": False, "error": str(exc)}, status=404)
+                return
+            except Exception as exc:
+                self._send_json({"ok": False, "error": str(exc)}, status=400)
+                return
+            self._send_json(result)
 
         def _submit_tasks(self) -> None:
             try:

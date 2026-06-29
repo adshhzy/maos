@@ -1,0 +1,42 @@
+{
+  "id": "evaluate-async-ttl-cache-single-vs-multi-claude",
+  "name": "确定性评测 - AsyncTTLCache 单Agent vs 多Agent",
+  "graph_type": "dag",
+  "input": {
+    "benchmark_id": "async_ttl_cache",
+    "single_task_id": "REPLACE_WITH_SINGLE_AGENT_TASK_ID",
+    "single_node_id": "single_coding_agent",
+    "multi_task_id": "REPLACE_WITH_MULTI_AGENT_TASK_ID",
+    "multi_node_id": "final_integrator"
+  },
+  "nodes": [
+    {
+      "id": "deterministic_evaluator",
+      "label": "确定性隐藏测试评测",
+      "operation": "evaluate",
+      "agent": {
+        "backend": "evaluator",
+        "agent_key": "async_ttl_cache",
+        "context_policy": "provided_context_only",
+        "runtime_profile": "deterministic",
+        "execution_mode": "local_pytest",
+        "poll_seconds": 5,
+        "timeout_seconds": 300
+      },
+      "params": {
+        "benchmark_id": "async_ttl_cache"
+      },
+      "timeout_seconds": 420
+    }
+  ],
+  "edges": [],
+  "description": "把单Agent和多Agent编码任务的 task_id 填入 input 后运行。本图不会调用 LLM，只会通过 evaluator provider 拉取两个最终输出、提取代码、运行隐藏 pytest，并生成对比报告。",
+  "metadata": {
+    "comparison_group": "coding_async_ttl_cache",
+    "backend_variant": "evaluator",
+    "requires": [
+      "single-agent-coding-async-ttl-cache-claude",
+      "multi-agent-coding-async-ttl-cache-claude 或 multi-agent-coding-async-ttl-cache-review-loop-claude"
+    ]
+  }
+}

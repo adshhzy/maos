@@ -6,8 +6,8 @@
 
 from __future__ import annotations
 
-from maos_runtime.a2a_constants import CLAUDE_BACKEND, CODEX_BACKEND, HERMES_BACKEND, MULTICA_BACKEND, SIMULATOR_BACKEND
-from maos_runtime.a2a_provider_base import AgentRuntimeProvider
+from maos_runtime.a2a_constants import CLAUDE_BACKEND, CODEX_BACKEND, EVALUATOR_BACKEND, HERMES_BACKEND, MULTICA_BACKEND, SIMULATOR_BACKEND
+from maos_runtime.a2a_provider_base import ProviderRuntime
 
 
 _BACKEND_ALIASES = {
@@ -30,9 +30,13 @@ _BACKEND_ALIASES = {
     "claude-cli": CLAUDE_BACKEND,
     "direct-claude": CLAUDE_BACKEND,
     "claude-direct": CLAUDE_BACKEND,
+    "evaluator": EVALUATOR_BACKEND,
+    "evaluation": EVALUATOR_BACKEND,
+    "deterministic-evaluator": EVALUATOR_BACKEND,
+    "benchmark": EVALUATOR_BACKEND,
 }
 
-_PROVIDERS: dict[str, AgentRuntimeProvider] = {}
+_PROVIDERS: dict[str, ProviderRuntime] = {}
 
 
 def normalize_backend(backend: str) -> str:
@@ -41,7 +45,7 @@ def normalize_backend(backend: str) -> str:
 
 
 def register_provider(
-    provider: AgentRuntimeProvider,
+    provider: ProviderRuntime,
     *,
     aliases: list[str] | tuple[str, ...] = (),
     replace: bool = False,
@@ -60,7 +64,7 @@ def provider_for_backend(
     backend: str,
     *,
     node_id: str | None = None,
-) -> AgentRuntimeProvider:
+) -> ProviderRuntime:
     normalized = normalize_backend(backend)
     provider = _PROVIDERS.get(normalized)
     if provider:

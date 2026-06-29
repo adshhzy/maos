@@ -63,6 +63,8 @@ def _send_claude_message(request: dict[str, Any]) -> dict[str, Any]:
     request_metadata = request.get("metadata", {})
     payload = _first_data_part(message)
     node = payload["node"]
+    if isinstance(payload.get("control_flow"), dict):
+        node = {**node, "control_flow": payload["control_flow"]}
     agent = _node_agent_config(node)
     idempotency_key = _request_idempotency_key(request)
     task_id = _stable_runtime_id("a2a-task", node["id"], idempotency_key)
@@ -137,6 +139,21 @@ def _send_claude_message(request: dict[str, Any]) -> dict[str, Any]:
             "runtimeProfile": runtime_profile,
             "executionMode": "claude_print",
             "resultTextLimit": result_text_limit,
+            "strictStructuredOutput": bool(
+                agent.get("strict_structured_output")
+                or node.get("strict_structured_output")
+            ),
+            "requiredStructuredOutputFields": (
+                agent.get("required_structured_output_fields")
+                or node.get("required_structured_output_fields")
+                or []
+            ),
+            "riskPassRequiresFinalVisit": bool(
+                agent.get("risk_pass_requires_final_visit")
+                or node.get("risk_pass_requires_final_visit")
+            ),
+            "controlFlowVisit": _control_flow_visit(node),
+            "controlFlowMaxVisits": int(node.get("max_visits") or 1),
             "timeoutSeconds": _claude_timeout(agent, node),
             "plannedDurationSeconds": None,
             "startedAt": time.time(),
@@ -315,7 +332,15 @@ def _claude_result(metadata: dict[str, Any], output: str, elapsed: float) -> dic
     # history/API projections compact it later; downstream Agent nodes should
     # receive the complete upstream result.
     latest = output.strip()
-    structured_output = _extract_structured_agent_output(output)
+    strict_structured_output = bool(metadata.get("strictStructuredOutput"))
+    required_fields = metadata.get("requiredStructuredOutputFields") or []
+    structured_output = _extract_structured_agent_output(
+        output,
+        allow_text_decision=not strict_structured_output,
+        require_complete_decision=strict_structured_output,
+        required_fields=required_fields if isinstance(required_fields, list) else [],
+    )
+    structured_output = _enforce_control_flow_decision_policy(structured_output, metadata)
     payload = {
         "status": "completed",
         "agent_backend": CLAUDE_BACKEND,
@@ -354,6 +379,43 @@ def _claude_result(metadata: dict[str, Any], output: str, elapsed: float) -> dic
         "duration_seconds": elapsed,
         "payload": payload,
     }
+
+
+def _control_flow_visit(node: dict[str, Any]) -> int:
+    control_flow = node.get("control_flow")
+    if isinstance(control_flow, dict):
+        try:
+            return int(control_flow.get("visit") or 1)
+        except (TypeError, ValueError):
+            return 1
+    return 1
+
+
+def _enforce_control_flow_decision_policy(
+    structured_output: dict[str, Any],
+    metadata: dict[str, Any],
+) -> dict[str, Any]:
+    if not structured_output:
+        return structured_output
+    if not metadata.get("riskPassRequiresFinalVisit"):
+        return structured_output
+    if structured_output.get("decision") != "approved_with_risk":
+        return structured_output
+    try:
+        visit = int(metadata.get("controlFlowVisit") or 1)
+        max_visits = int(metadata.get("controlFlowMaxVisits") or 1)
+    except (TypeError, ValueError):
+        return structured_output
+    if visit >= max_visits:
+        return structured_output
+    adjusted = dict(structured_output)
+    adjusted["original_decision"] = structured_output.get("decision")
+    adjusted["decision"] = "needs_revision"
+    adjusted["decision_adjustment_reason"] = (
+        "approved_with_risk is only allowed on the final review visit; "
+        "earlier risk-pass output is routed as needs_revision."
+    )
+    return adjusted
 
 
 def _claude_command(agent: dict[str, Any], node: dict[str, Any]) -> list[str]:

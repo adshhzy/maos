@@ -1,6 +1,7 @@
 import unittest
 
-from maos_runtime.a2a import provider_capabilities, task_artifacts, task_events
+from maos_runtime.a2a import ProviderRuntime, provider_capabilities, task_artifacts, task_events
+from maos_runtime.a2a.providers import ClaudeCliProvider, EvaluatorProvider, SimulatorProvider
 from maos_runtime.a2a_task_store import TASKS, TASKS_LOCK
 from services.agent_service.main import _agent_service_capabilities
 
@@ -16,12 +17,29 @@ class ProviderApiV1Tests(unittest.TestCase):
         self.assertEqual(capabilities["api_version"], "agent-provider-v1")
         self.assertIn("simulator", capabilities["providers"])
         self.assertIn("codex", capabilities["providers"])
+        self.assertIn("evaluator", capabilities["providers"])
         self.assertTrue(capabilities["providers"]["simulator"]["operations"]["create"])
         self.assertTrue(capabilities["providers"]["simulator"]["operations"]["poll"])
         self.assertTrue(capabilities["providers"]["simulator"]["operations"]["artifacts"])
         self.assertTrue(capabilities["providers"]["codex"]["operations"]["create"])
         self.assertTrue(capabilities["providers"]["codex"]["operations"]["poll"])
         self.assertTrue(capabilities["providers"]["codex"]["operations"]["cancel"])
+        self.assertTrue(capabilities["providers"]["evaluator"]["operations"]["create"])
+        self.assertTrue(capabilities["providers"]["evaluator"]["operations"]["poll"])
+        self.assertTrue(capabilities["providers"]["evaluator"]["operations"]["artifacts"])
+
+    def test_builtin_providers_share_provider_runtime_lifecycle(self) -> None:
+        simulator = SimulatorProvider()
+        claude = ClaudeCliProvider()
+        evaluator = EvaluatorProvider()
+
+        self.assertIsInstance(simulator, ProviderRuntime)
+        self.assertTrue(simulator.capabilities()["operations"]["resume"])
+        self.assertTrue(claude.capabilities()["operations"]["cancel"])
+        self.assertFalse(claude.capabilities()["operations"]["resume"])
+        self.assertFalse(evaluator.capabilities()["operations"]["cancel"])
+        with self.assertRaisesRegex(NotImplementedError, "does not support human-input resume"):
+            claude.resume("a2a-task-test", {})
 
     def test_provider_events_and_artifacts_use_local_a2a_task_shape(self) -> None:
         task = {

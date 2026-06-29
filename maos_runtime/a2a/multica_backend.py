@@ -48,6 +48,8 @@ def _send_multica_message(request: dict[str, Any]) -> dict[str, Any]:
     request_metadata = request.get("metadata", {})
     payload = _first_data_part(message)
     node = payload["node"]
+    if isinstance(payload.get("control_flow"), dict):
+        node = {**node, "control_flow": payload["control_flow"]}
     agent = _node_agent_config(node)
     idempotency_key = _request_idempotency_key(request)
     task_id = _stable_runtime_id("a2a-task", node["id"], idempotency_key)

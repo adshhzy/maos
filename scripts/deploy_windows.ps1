@@ -70,7 +70,7 @@ Set-Location $ProjectRoot
 $ProjectRoot = (Resolve-Path ".").Path
 $VenvPython = Join-Path $ProjectRoot ".venv\Scripts\python.exe"
 $TemporalDbFile = Join-Path $DataDir "temporal.db"
-$A2ARegistryFile = Join-Path $DataDir "a2a-invocations.json"
+$ProviderTaskDbFile = Join-Path $DataDir "maos_runtime.db"
 $LogDir = Join-Path $ProjectRoot "runtime_logs"
 
 if ([string]::IsNullOrWhiteSpace($HermesWorkdir)) {
@@ -135,7 +135,8 @@ if (-not (Test-Path $envPath)) {
 $env:AGENT_SERVICE_API_BASE = "http://${HostName}:$AgentServicePort"
 $env:SIMULATOR_API_BASE = "http://${HostName}:$SimulatorPort"
 $env:SANDBOX_API_BASE = "http://${HostName}:$SandboxPort"
-$env:A2A_INVOCATION_REGISTRY_FILE = $A2ARegistryFile
+$env:MAOS_DATA_DIR = $DataDir
+$env:A2A_PROVIDER_TASK_DB_FILE = $ProviderTaskDbFile
 
 if (-not $SkipAgentService) {
     Write-Step "Starting Agent Service"
@@ -195,5 +196,5 @@ if (-not $UseExternalTemporal -and -not $NoTemporalUi) {
     Write-Host "Temporal UI:   http://${HostName}:$TemporalUiPort"
 }
 Write-Host "Temporal DB:   $TemporalDbFile"
-Write-Host "A2A registry:  $A2ARegistryFile"
+Write-Host "Provider DB:   $ProviderTaskDbFile"
 Write-Host "Logs:          $LogDir"

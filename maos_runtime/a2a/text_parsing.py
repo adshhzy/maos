@@ -5,12 +5,25 @@ import re
 from typing import Any
 
 
-def _extract_structured_agent_output(text: str | None) -> dict[str, Any]:
+def _extract_structured_agent_output(
+    text: str | None,
+    *,
+    allow_text_decision: bool = True,
+    require_complete_decision: bool = False,
+    required_fields: list[str] | tuple[str, ...] | None = None,
+) -> dict[str, Any]:
     if not text:
         return {}
     json_object = _json_object_from_text(text)
     if json_object:
-        return _normalize_agent_decision_payload(json_object)
+        normalized = _normalize_agent_decision_payload(json_object)
+        if require_complete_decision and not _has_complete_decision_payload(normalized):
+            return {}
+        if required_fields and not _has_required_fields(normalized, required_fields):
+            return {}
+        return normalized
+    if not allow_text_decision:
+        return {}
     return _extract_decision_from_text(text)
 
 
@@ -94,6 +107,8 @@ def _normalize_agent_decision_payload(value: dict[str, Any]) -> dict[str, Any]:
 
 def _extract_decision_from_text(text: str) -> dict[str, Any]:
     lower = text.lower()
+    if "approved_with_risk" in lower or "approved with risk" in lower:
+        return {"decision": "approved_with_risk"}
     if "needs_revision" in lower or "need_revision" in lower or "requires_revision" in lower:
         return {"decision": "needs_revision"}
     if "approved" in lower or "approve" in lower:
@@ -114,6 +129,11 @@ def _normalize_decision_value(value: Any) -> str:
         "pass": "approved",
         "passed": "approved",
         "go": "approved",
+        "approved_with_risk": "approved_with_risk",
+        "risk_approved": "approved_with_risk",
+        "risk_pass": "approved_with_risk",
+        "pass_with_risk": "approved_with_risk",
+        "带风险通过": "approved_with_risk",
         "通过": "approved",
         "批准": "approved",
         "同意": "approved",
@@ -129,6 +149,32 @@ def _normalize_decision_value(value: Any) -> str:
         "不通过": "needs_revision",
     }
     return mapping.get(text, text)
+
+
+def _has_complete_decision_payload(value: dict[str, Any]) -> bool:
+    decision = value.get("decision")
+    if not isinstance(decision, str) or not decision:
+        return False
+    reason = value.get("reason")
+    if not isinstance(reason, str) or not reason.strip():
+        return False
+    if not isinstance(value.get("required_changes"), list):
+        return False
+    if decision == "approved_with_risk" and not isinstance(value.get("risks"), list):
+        return False
+    return True
+
+
+def _has_required_fields(value: dict[str, Any], required_fields: list[str] | tuple[str, ...]) -> bool:
+    for field in required_fields:
+        current: Any = value
+        for part in str(field).split("."):
+            if not isinstance(current, dict) or part not in current:
+                return False
+            current = current[part]
+        if current is None:
+            return False
+    return True
 
 
 def _text_from_record(record: dict[str, Any]) -> str | None:

@@ -3,7 +3,7 @@
   "name": "单 Claude 编码基线 - AsyncTTLCache 小库实现",
   "graph_type": "dag",
   "input": {
-    "task": "请实现一个可复用的 Python 小库 `maos_cache.py`，提供一个生产可用的 `AsyncTTLCache` 与装饰器能力。要求：1. 支持同步函数和异步函数的缓存装饰器；2. 支持 TTL 过期、maxsize LRU 淘汰、手动 clear/invalidate；3. 对同一个 key 的并发异步调用要做 single-flight 去重，避免重复执行底层函数；4. 异常结果不能被缓存；5. 提供 cache_info 统计：hits、misses、evictions、inflight、size；6. 使用标准库实现，不依赖第三方库；7. 给出完整代码、pytest 风格测试代码、关键设计说明和使用示例。"
+    "task": "请实现一个可复用的 Python 小库 `maos_cache.py`，提供生产可用的 `AsyncTTLCache` 与同步/异步装饰器能力。必须使用标准库实现。公共 API 契约必须包含：`AsyncTTLCache`、`CacheInfo`、`ttl_cache`、`async_ttl_cache`；`AsyncTTLCache` 至少提供 `get_or_set`、`aget_or_set`、`invalidate`、`clear`、`cache_info`。要求支持 TTL 过期、maxsize LRU 淘汰、异常结果不缓存、同 key 并发异步调用 single-flight 去重、cache_info 统计 hits/misses/evictions/inflight/size。统计语义要求：首个实际执行 factory 的调用计入 misses，并发等待同一个 inflight 结果的 awaiter 计入 hits；TTL 过期不计 eviction，maxsize LRU 淘汰才计 eviction；factory 抛异常时不得缓存，且必须清理 inflight，后续调用可以重试。最终交付只需要完整 `maos_cache.py` 主体代码、设计说明和最小可运行使用示例；不要生成 pytest、unittest 或任何测试文件代码。"
   },
   "nodes": [
     {
@@ -22,7 +22,7 @@
         "result_text_limit": 20000,
         "prompt_payload_limit": 32000,
         "bare": true,
-        "prompt": "你是资深 Python 工程师。请独立完成整个编码任务：输出 `maos_cache.py` 完整代码、pytest 测试代码、设计说明和使用示例。请特别注意并发 single-flight、TTL+LRU 交互、异常不缓存、同步/异步装饰器一致性。用中文说明，代码块必须完整可复制。"
+        "prompt": "你是资深 Python 工程师。请独立完成整个编码任务：输出 `maos_cache.py` 完整主体代码、设计说明和最小可运行使用示例。不要生成 pytest、unittest 或任何测试文件代码。必须严格满足公共 API 契约：`from maos_cache import AsyncTTLCache, CacheInfo, ttl_cache, async_ttl_cache` 成立；`AsyncTTLCache` 必须提供 `get_or_set`、`aget_or_set`、`invalidate`、`clear`、`cache_info`；`get_or_set` 是同步接口，`aget_or_set` 是异步接口且必须支持同 key single-flight。请特别注意：并发等待同一个 inflight 结果的 awaiter 计入 hits，首个启动 factory 的调用计入 misses；TTL 过期不计 eviction，maxsize LRU 淘汰才计 eviction；factory 抛异常时不得缓存且必须清理 inflight；同步/异步装饰器命名必须是 `ttl_cache` 和 `async_ttl_cache`，不要替换为其他名字。用中文说明，代码块必须完整可复制。"
       },
       "timeout_seconds": 3900
     }

@@ -8,13 +8,16 @@ from temporalio import workflow
 from temporalio.common import RetryPolicy
 
 from maos_runtime.a2a import extract_result_from_task
+from maos_runtime.workflows.agent_events import (
+    agent_event_requires_human,
+    agent_human_intervention_id,
+    human_request_from_agent_event,
+    result_output_text,
+)
 from maos_runtime.graph.control_flow import (
-    _edge_label,
     _is_condition_node,
     _is_human_node,
-    _node_backend_for_display,
     _node_max_visits,
-    _node_type,
     _outgoing_edges,
     _predecessor_ids,
     _resolve_value,
@@ -23,6 +26,7 @@ from maos_runtime.graph.control_flow import (
     normalize_graph,
 )
 from maos_runtime.workflows.activities import (
+    archive_completed_workflow,
     dispatch_agent_node,
     poll_agent_node,
     resume_agent_node_human_intervention,
@@ -32,113 +36,28 @@ from maos_runtime.workflows.constants import (
     DEFAULT_MAX_TOTAL_VISITS,
     DEFAULT_NODE_TIMEOUT_SECONDS,
 )
+from maos_runtime.workflows.history_compaction import (
+    WORKFLOW_HISTORY_LIST_LIMIT,
+    WORKFLOW_HISTORY_TEXT_LIMIT,
+    compact_dependency_executions_for_activity as _compact_dependency_executions_for_activity,
+    compact_execution_for_history as _compact_execution_for_history,
+    compact_payload_for_history as _compact_payload_for_history,
+    compact_value_for_history as _compact_value_for_history,
+)
+from maos_runtime.workflows.human_interventions import (
+    build_human_intervention,
+    human_result_payload,
+    node_human_interventions,
+)
+from maos_runtime.workflows.state_builders import (
+    build_edge_state,
+    build_instance_state,
+    build_node_state,
+    build_start_execution,
+)
 
 
 DISPATCH_RETRY_POLICY = RetryPolicy(maximum_attempts=5)
-WORKFLOW_HISTORY_TEXT_LIMIT = 8000
-WORKFLOW_HISTORY_LIST_LIMIT = 20
-
-
-def _compact_execution_for_history(execution: dict[str, Any]) -> dict[str, Any]:
-    compact: dict[str, Any] = {
-        "status": execution.get("status"),
-        "instance_id": execution.get("instance_id"),
-    }
-    if execution.get("error") is not None:
-        compact["error"] = _compact_value_for_history(execution.get("error"))
-    if isinstance(execution.get("result"), dict):
-        compact["result"] = _compact_value_for_history(execution["result"])
-    if isinstance(execution.get("a2a_task"), dict):
-        compact["a2a_task"] = _compact_a2a_task_for_history(execution["a2a_task"])
-    return {key: value for key, value in compact.items() if value is not None}
-
-
-def _compact_dependency_executions_for_activity(
-    dependency_executions: dict[str, Any],
-) -> dict[str, Any]:
-    return {
-        str(node_id): _compact_execution_for_history(execution)
-        for node_id, execution in dependency_executions.items()
-    }
-
-
-def _compact_a2a_task_for_history(task: dict[str, Any]) -> dict[str, Any]:
-    compact: dict[str, Any] = {
-        "id": task.get("id"),
-        "status": _compact_value_for_history(task.get("status") or {}),
-        "metadata": _compact_value_for_history(task.get("metadata") or {}),
-    }
-    artifacts = task.get("artifacts")
-    if isinstance(artifacts, list):
-        compact["artifacts"] = [_compact_artifact_for_history(item) for item in artifacts[-WORKFLOW_HISTORY_LIST_LIMIT:]]
-    return {key: value for key, value in compact.items() if value not in (None, {}, [])}
-
-
-def _compact_artifact_for_history(artifact: Any) -> Any:
-    if not isinstance(artifact, dict):
-        return _compact_value_for_history(artifact)
-    return {
-        "artifactId": artifact.get("artifactId"),
-        "name": artifact.get("name"),
-        "description": _compact_value_for_history(artifact.get("description")),
-        "metadata": _compact_value_for_history(artifact.get("metadata") or {}),
-        "parts": _compact_value_for_history(artifact.get("parts") or []),
-    }
-
-
-def _compact_payload_for_history(payload: Any) -> Any:
-    return _compact_value_for_history(payload)
-
-
-def _result_output_text(payload: Any) -> str:
-    if not isinstance(payload, dict):
-        return ""
-    for key in ("latest_comment", "stdout", "result", "output", "response"):
-        value = payload.get(key)
-        if isinstance(value, str) and value.strip():
-            return value
-    structured = payload.get("structured_output")
-    if isinstance(structured, dict):
-        for key in ("final_answer", "content", "markdown", "summary"):
-            value = structured.get(key)
-            if isinstance(value, str) and value.strip():
-                return value
-    return ""
-
-
-def _compact_value_for_history(value: Any) -> Any:
-    if isinstance(value, str):
-        if len(value) <= WORKFLOW_HISTORY_TEXT_LIMIT:
-            return value
-        return value[:WORKFLOW_HISTORY_TEXT_LIMIT] + "...<truncated>"
-    if isinstance(value, list):
-        return [_compact_value_for_history(item) for item in value[-WORKFLOW_HISTORY_LIST_LIMIT:]]
-    if isinstance(value, dict):
-        compact: dict[str, Any] = {}
-        omitted: list[str] = []
-        for key, item in value.items():
-            key_text = str(key)
-            if key_text in {
-                "raw",
-                "history",
-                "full_text",
-                "transcript",
-                "messages",
-                "comments",
-                "runs",
-                "trace",
-                "dependency_results",
-                "dependency_artifacts",
-            }:
-                omitted.append(key_text)
-                continue
-            compact[key_text] = _compact_value_for_history(item)
-        if omitted:
-            compact["_omitted_for_workflow_history"] = omitted
-        return compact
-    return value
-
-
 @workflow.defn
 class JsonDagWorkflow:
     """Temporal workflow for JSON control-flow graphs.
@@ -208,9 +127,9 @@ class JsonDagWorkflow:
                     )
                 if failure_error is not None:
                     self._workflow_status = "failed"
-                    return self._workflow_result(spec, "failed", failure_error)
+                    return await self._finalize_workflow_result(spec, "failed", failure_error)
                 self._workflow_status = "completed"
-                return self._workflow_result(spec, "completed")
+                return await self._finalize_workflow_result(spec, "completed")
 
             for node_id in ready_nodes:
                 total_visits += 1
@@ -255,7 +174,7 @@ class JsonDagWorkflow:
 
             if failure_error is not None and not running:
                 self._workflow_status = "failed"
-                return self._workflow_result(spec, "failed", failure_error)
+                return await self._finalize_workflow_result(spec, "failed", failure_error)
 
             if not running:
                 continue
@@ -310,7 +229,7 @@ class JsonDagWorkflow:
                     self._workflow_status = "failed"
 
             if failure_error is not None and not running:
-                return self._workflow_result(spec, "failed", failure_error)
+                return await self._finalize_workflow_result(spec, "failed", failure_error)
 
     @workflow.signal
     def agent_node_completed(self, event: dict[str, Any]) -> None:
@@ -383,58 +302,13 @@ class JsonDagWorkflow:
         self._graph_name = spec.get("name", spec["id"])
         self._graph_type = spec.get("graph_type", "control_flow")
         self._levels = spec["levels"]
-        self._edges = [
-            {
-                "from": edge["from"],
-                "to": edge["to"],
-                "label": edge.get("label") or _edge_label(edge),
-                "when": edge.get("when"),
-                "taken_count": 0,
-                "skipped_count": 0,
-            }
-            for edge in spec["edges"]
-        ]
+        self._edges = [build_edge_state(edge) for edge in spec["edges"]]
         self._visits = {node["id"]: 0 for node in spec["nodes"]}
         self._nodes = {
-            node["id"]: {
-                "id": node["id"],
-                "label": node.get("label", node["id"]),
-                "type": _node_type(node),
-                "operation": node.get("operation", "merge"),
-                "deps": node.get("deps", []),
-                "join": node.get("join", spec.get("default_join", "all")),
-                "status": "pending",
-                "started_at": None,
-                "finished_at": None,
-                "duration_seconds": None,
-                "planned_duration_seconds": None,
-                "elapsed_seconds": 0,
-                "heartbeat_count": 0,
-                "last_heartbeat_at": None,
-                "simulator_job_id": None,
-                "agent_service_task_id": None,
-                "hermes_job_id": None,
-                "hermes_prompt": None,
-                "codex_prompt": None,
-                "codex_command": None,
-                "codex_workdir": None,
-                "claude_task_id": None,
-                "claude_prompt": None,
-                "claude_command": None,
-                "claude_workdir": None,
-                "agent_status": None,
-                "backend": _node_backend_for_display(node),
-                "completion_mode": None,
-                "a2a_task_id": None,
-                "a2a_state": None,
-                "agent_name": None,
-                "summary": "",
-                "visits": 0,
-                "max_visits": _node_max_visits(node),
-                "current_instance_id": None,
-                "instances": [],
-                "human_interventions": [],
-            }
+            node["id"]: build_node_state(
+                node,
+                graph_default_join=spec.get("default_join", "all"),
+            )
             for node in spec["nodes"]
         }
 
@@ -462,14 +336,22 @@ class JsonDagWorkflow:
         node_spec: dict[str, Any],
         arrivals: dict[str, dict[str, Any]],
     ) -> dict[str, Any]:
+        node_id = str(node_spec["id"])
         dependencies = {
-            node_id: execution
-            for node_id, execution in arrivals.items()
-            if node_id != "__start__"
+            arrival_node_id: execution
+            for arrival_node_id, execution in arrivals.items()
+            if arrival_node_id != "__start__"
         }
         for dep in node_spec.get("deps", []):
             if dep in self._latest_completed and dep not in dependencies:
                 dependencies[dep] = self._latest_completed[dep]
+        if (
+            self._visits.get(node_id, 0) > 1
+            and node_id in self._latest_completed
+            and node_id not in dependencies
+        ):
+            # 循环修订节点需要看到自己上一轮的完整输出，否则只能根据审查意见重写。
+            dependencies[node_id] = self._latest_completed[node_id]
         return dependencies
 
     async def _execute_node(
@@ -651,32 +533,21 @@ class JsonDagWorkflow:
         human_request: dict[str, Any] | None = None,
         a2a_task_id: str | None = None,
     ) -> dict[str, Any]:
-        intervention = {
-            "id": intervention_id,
-            "intervention_id": intervention_id,
-            "workflow_id": workflow.info().workflow_id,
-            "node_id": node_spec["id"],
-            "node_label": node_spec.get("label", node_spec["id"]),
-            "instance_id": node_spec["_instance_id"],
-            "visit": node_spec.get("_visit", 1),
-            "type": intervention_type,
-            "source": source,
-            "status": "pending",
-            "prompt": prompt,
-            "schema": schema,
-            "assignee": assignee,
-            "assignee_role": assignee_role,
-            "created_at": created_at or workflow.now().isoformat(),
-            "responded_at": None,
-            "responder": None,
-            "response": None,
-            "decision": None,
-            "comment": None,
-            "upstream_node_ids": upstream_node_ids or [],
-            "human_request": human_request or {},
-            "human_request_id": (human_request or {}).get("request_id"),
-            "a2a_task_id": a2a_task_id,
-        }
+        intervention = build_human_intervention(
+            workflow_id=workflow.info().workflow_id,
+            node_spec=node_spec,
+            intervention_id=intervention_id,
+            prompt=prompt,
+            intervention_type=intervention_type,
+            schema=schema,
+            assignee=assignee,
+            assignee_role=assignee_role,
+            upstream_node_ids=upstream_node_ids,
+            created_at=created_at or workflow.now().isoformat(),
+            source=source,
+            human_request=human_request,
+            a2a_task_id=a2a_task_id,
+        )
         self._human_interventions[intervention_id] = intervention
         return intervention
 
@@ -698,22 +569,12 @@ class JsonDagWorkflow:
         resolved: dict[str, Any],
         upstream_node_ids: list[str],
     ) -> dict[str, Any]:
-        response_payload = response_event.get("response", {})
-        if not isinstance(response_payload, dict):
-            response_payload = {"value": response_payload}
-        payload = {
-            "status": "completed",
-            "human_intervention_id": intervention_id,
-            "human_intervention_type": resolved.get("type"),
-            "decision": response_event.get("decision") or response_payload.get("decision"),
-            "comment": response_event.get("comment") or response_payload.get("comment"),
-            "responder": response_event.get("responder"),
-            "response": response_payload,
-            "human_interventions": [resolved],
-            "upstream_node_ids": upstream_node_ids,
-        }
-        payload.update({key: value for key, value in response_payload.items() if key not in payload})
-        return payload
+        return human_result_payload(
+            intervention_id=intervention_id,
+            response_event=response_event,
+            resolved=resolved,
+            upstream_node_ids=upstream_node_ids,
+        )
 
     async def _execute_agent_node(
         self,
@@ -849,7 +710,7 @@ class JsonDagWorkflow:
         node_state["elapsed_seconds"] = result["duration_seconds"]
         node_state["summary"] = _summarize_result(result)
         result_payload = result.get("payload", {})
-        output_text = _result_output_text(result_payload)
+        output_text = result_output_text(result_payload)
         artifact_count = len(a2a_task.get("artifacts") or []) if isinstance(a2a_task, dict) else 0
         node_state["output_available"] = bool(output_text)
         node_state["output_chars"] = len(output_text)
@@ -950,6 +811,31 @@ class JsonDagWorkflow:
             "instance_results": dict(self._all_results),
             "state": self.graph_state(),
         }
+
+    async def _finalize_workflow_result(
+        self,
+        spec: dict[str, Any],
+        status: str,
+        error: str | None = None,
+    ) -> dict[str, Any]:
+        result = self._workflow_result(spec, status, error)
+        archive_result = await workflow.execute_activity(
+            archive_completed_workflow,
+            {
+                "workflow_id": workflow.info().workflow_id,
+                "result": result,
+                "submitted_at": None,
+                "updated_at": workflow.now().timestamp(),
+            },
+            start_to_close_timeout=timedelta(seconds=30),
+            heartbeat_timeout=timedelta(seconds=30),
+            retry_policy=RetryPolicy(maximum_attempts=3),
+        )
+        if not archive_result.get("ok"):
+            result["archive_error"] = archive_result.get("error", "archive failed")
+        else:
+            result["archive"] = archive_result
+        return result
 
     def _failed_execution(
         self,
@@ -1095,15 +981,7 @@ class JsonDagWorkflow:
             await workflow.sleep(timedelta(seconds=min(poll_seconds, remaining_seconds)))
 
     def _agent_event_requires_human(self, event: dict[str, Any]) -> bool:
-        task = event.get("a2a_task") or event.get("task") or {}
-        state = ((task.get("status") or {}).get("state") or event.get("a2a_state") or "")
-        status = str(event.get("status") or "").lower()
-        return state == "TASK_STATE_INPUT_REQUIRED" or status in {
-            "needs_input",
-            "input_required",
-            "waiting_human",
-            "human_required",
-        }
+        return agent_event_requires_human(event)
 
     async def _handle_agent_human_intervention(
         self,
@@ -1194,32 +1072,14 @@ class JsonDagWorkflow:
         event: dict[str, Any],
         a2a_task: dict[str, Any],
     ) -> dict[str, Any]:
-        metadata = a2a_task.get("metadata", {})
-        status_message = (a2a_task.get("status") or {}).get("message") or {}
-        message_payload: dict[str, Any] = {}
-        if isinstance(status_message, dict):
-            for part in status_message.get("parts", []):
-                if isinstance(part, dict) and isinstance(part.get("data"), dict):
-                    message_payload = part["data"]
-                    break
-        human_request = (
-            event.get("human_request")
-            or metadata.get("humanRequest")
-            or message_payload.get("human_request")
-            or {}
-        )
-        return dict(human_request)
+        return human_request_from_agent_event(event, a2a_task)
 
     def _agent_human_intervention_id(
         self,
         node_spec: dict[str, Any],
         request_id: str,
     ) -> str:
-        safe_request_id = "".join(
-            char if char.isalnum() or char in {"-", "_", "#"} else "-"
-            for char in request_id
-        )
-        return f"human-{node_spec['_instance_id']}-agent-{safe_request_id}"
+        return agent_human_intervention_id(node_spec, request_id)
 
     def _update_node_from_a2a_task(
         self,
@@ -1266,19 +1126,12 @@ class JsonDagWorkflow:
         kind: str,
         started_at: str,
     ) -> None:
-        instance = {
-            "id": node_spec["_instance_id"],
-            "node_id": node_spec["id"],
-            "visit": node_spec.get("_visit", 1),
-            "kind": kind,
-            "status": "running",
-            "started_at": started_at,
-            "finished_at": None,
-            "backend": self._nodes[node_spec["id"]].get("backend"),
-            "agent_name": None,
-            "a2a_task_id": None,
-            "summary": "",
-        }
+        instance = build_instance_state(
+            node_spec=node_spec,
+            kind=kind,
+            started_at=started_at,
+            backend=self._nodes[node_spec["id"]].get("backend"),
+        )
         self._instances.append(instance)
         self._nodes[node_spec["id"]]["instances"] = self._recent_node_instances(node_spec["id"])
 
@@ -1314,11 +1167,7 @@ class JsonDagWorkflow:
         ][-6:]
 
     def _node_human_interventions(self, node_id: str) -> list[dict[str, Any]]:
-        return [
-            intervention
-            for intervention in self._human_interventions.values()
-            if intervention.get("node_id") == node_id
-        ][-10:]
+        return node_human_interventions(self._human_interventions, node_id)
 
     def _record_edge_taken(self, edge: dict[str, Any]) -> None:
         for state_edge in self._edges:
@@ -1333,16 +1182,7 @@ class JsonDagWorkflow:
                 return
 
     def _start_execution(self) -> dict[str, Any]:
-        return {
-            "status": "completed",
-            "result": {
-                "node": "__start__",
-                "operation": "start",
-                "duration_seconds": 0,
-                "payload": {"status": "completed"},
-            },
-            "a2a_task": {"id": "__start__", "artifacts": []},
-        }
+        return build_start_execution()
 
 
 

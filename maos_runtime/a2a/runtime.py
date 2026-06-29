@@ -2,7 +2,7 @@ import copy
 from typing import Any
 
 from maos_runtime.a2a_constants import SIMULATOR_BACKEND
-from maos_runtime.a2a_provider_base import AgentRuntimeProvider
+from maos_runtime.a2a_provider_base import ProviderRuntime
 from maos_runtime.a2a_provider_registry import (
     list_provider_backends,
     register_provider,
@@ -14,7 +14,7 @@ from maos_runtime.a2a_task_store import (
     store_idempotent_task as _store_idempotent_task,
     task_for_idempotency_key as _task_for_idempotency_key,
 )
-from maos_runtime.a2a.providers import ClaudeCliProvider, CodexCliProvider, HermesOneshotProvider, MulticaProvider, SimulatorProvider
+from maos_runtime.a2a.providers import ClaudeCliProvider, CodexCliProvider, EvaluatorProvider, HermesOneshotProvider, MulticaProvider, SimulatorProvider
 from maos_runtime.a2a.agent_service_client import _timestamp
 from maos_runtime.a2a.runtime_config_helpers import _provider_for_backend, _provider_for_node
 from maos_runtime.a2a.messages import (
@@ -27,14 +27,14 @@ from maos_runtime.a2a.messages import (
 
 
 def register_agent_provider(
-    provider: AgentRuntimeProvider,
+    provider: ProviderRuntime,
     *,
     aliases: list[str] | tuple[str, ...] = (),
     replace: bool = False,
 ) -> None:
     """注册一个 Agent runtime provider。
 
-    外部扩展只需要实现 AgentRuntimeProvider，然后调用这个函数注册 backend。
+    外部扩展只需要继承 ProviderRuntime，然后调用这个函数注册 backend。
     """
 
     register_provider(provider, aliases=aliases, replace=replace)
@@ -62,6 +62,7 @@ def _register_default_providers() -> None:
     register_agent_provider(HermesOneshotProvider(), replace=True)
     register_agent_provider(CodexCliProvider(), replace=True)
     register_agent_provider(ClaudeCliProvider(), replace=True)
+    register_agent_provider(EvaluatorProvider(), replace=True)
 
 
 _register_default_providers()

@@ -36,6 +36,19 @@ def _artifact_api_instruction() -> str:
         "或要求上游切换 inline 模式。\n\n"
     )
 
+
+def _previous_self_result_instruction(node: dict[str, Any]) -> str:
+    control_flow = node.get("control_flow") if isinstance(node.get("control_flow"), dict) else {}
+    previous_node = control_flow.get("previous_self_result_node") if isinstance(control_flow, dict) else None
+    if not previous_node:
+        return ""
+    return (
+        "## 循环修订上下文\n\n"
+        f"上游节点结果中的 `{previous_node}` 是当前节点上一轮执行输出，不是新的外部上游任务。"
+        "本轮应以它作为待改进版本，结合审查门或分支节点反馈做定向修订；"
+        "除非反馈要求重构，不要无视上一轮结果从零重写。\n\n"
+    )
+
 def _multica_description(
     node: dict[str, Any],
     dependency_results: dict[str, dict[str, Any]],
@@ -71,6 +84,7 @@ def _multica_description(
         "```json\n"
         f"{_safe_json(dependency_context, description_limit)}\n"
         "```\n\n"
+        f"{_previous_self_result_instruction(node)}"
         f"{_artifact_api_instruction()}"
         "## 执行边界\n\n"
         "- 只完成上面“任务指令”描述的业务任务。\n"
@@ -105,6 +119,7 @@ def _node_context_payload(node: dict[str, Any]) -> dict[str, Any]:
         "deps",
         "join",
         "max_visits",
+        "control_flow",
         "params",
         "timeout_seconds",
     ):
@@ -140,6 +155,7 @@ def _hermes_task_context(node: dict[str, Any]) -> dict[str, Any]:
         "deps",
         "join",
         "max_visits",
+        "control_flow",
         "params",
     ):
         if key in node:
@@ -383,6 +399,7 @@ def _hermes_prompt(
         "```json\n"
         f"{_safe_json(dependency_context, prompt_limit)}\n"
         "```\n\n"
+        f"{_previous_self_result_instruction(node)}"
         f"{_artifact_api_instruction()}"
         "## 执行边界\n\n"
         "- 只完成上面“任务指令”描述的业务任务。\n"

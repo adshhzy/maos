@@ -14,7 +14,7 @@ from maos_runtime.a2a_constants import (
     PROVIDED_CONTEXT_ONLY,
     SIMULATOR_BACKEND,
 )
-from maos_runtime.a2a_provider_base import AgentRuntimeProvider
+from maos_runtime.a2a_provider_base import ProviderRuntime
 from maos_runtime.a2a_provider_registry import normalize_backend, provider_for_backend
 from maos_runtime.runtime_config import agent_result_text_limit
 
@@ -49,13 +49,13 @@ def _metadata_result_text_limit(metadata: dict[str, Any]) -> int:
     except (TypeError, ValueError):
         return agent_result_text_limit()
 
-def _provider_for_node(node: dict[str, Any]) -> AgentRuntimeProvider:
+def _provider_for_node(node: dict[str, Any]) -> ProviderRuntime:
     return _provider_for_backend(_node_backend(node), node)
 
 def _provider_for_backend(
     backend: str,
     node: dict[str, Any] | None = None,
-) -> AgentRuntimeProvider:
+) -> ProviderRuntime:
     node_id = node["id"] if node else None
     return provider_for_backend(backend, node_id=node_id)
 

@@ -24,7 +24,7 @@ HERMES_GIT_BASH_PATH="${HERMES_GIT_BASH_PATH:-}"
 VENV_PY="$PROJECT_ROOT/.venv/bin/python"
 LOG_DIR="$PROJECT_ROOT/runtime_logs"
 TEMPORAL_DB_FILE="$DATA_DIR/temporal.db"
-A2A_REGISTRY_FILE="$DATA_DIR/a2a-invocations.json"
+PROVIDER_TASK_DB_FILE="$DATA_DIR/maos_runtime.db"
 
 step() {
   printf '\n==> %s\n' "$1"
@@ -119,7 +119,8 @@ fi
 export AGENT_SERVICE_API_BASE="http://$HOST:$AGENT_SERVICE_PORT"
 export SIMULATOR_API_BASE="http://$HOST:$SIMULATOR_PORT"
 export SANDBOX_API_BASE="http://$HOST:$SANDBOX_PORT"
-export A2A_INVOCATION_REGISTRY_FILE="$A2A_REGISTRY_FILE"
+export MAOS_DATA_DIR="$DATA_DIR"
+export A2A_PROVIDER_TASK_DB_FILE="$PROVIDER_TASK_DB_FILE"
 
 if [[ "$SKIP_AGENT_SERVICE" != "1" ]]; then
   step "Starting Agent Service"
@@ -176,5 +177,5 @@ if [[ "$USE_EXTERNAL_TEMPORAL" != "1" && "$NO_TEMPORAL_UI" != "1" ]]; then
   echo "Temporal UI:   http://$HOST:$TEMPORAL_UI_PORT"
 fi
 echo "Temporal DB:   $TEMPORAL_DB_FILE"
-echo "A2A registry:  $A2A_REGISTRY_FILE"
+echo "Provider DB:   $PROVIDER_TASK_DB_FILE"
 echo "Logs:          $LOG_DIR"

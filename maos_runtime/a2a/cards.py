@@ -172,3 +172,40 @@ def _claude_agent_card(node: dict[str, Any]) -> dict[str, Any]:
         ],
         "protocolVersions": ["1.0-adapter"],
     }
+
+def _evaluator_agent_card(node: dict[str, Any]) -> dict[str, Any]:
+    agent = _node_agent_config(node)
+    benchmark_id = (
+        agent.get("benchmark_id")
+        or (node.get("params") or {}).get("benchmark_id")
+        or "async_ttl_cache"
+    )
+    return {
+        "name": f"{benchmark_id}-deterministic-evaluator",
+        "description": f"Deterministic benchmark evaluator for control-flow node {node['id']}",
+        "supportedInterfaces": [
+            {
+                "transport": "LocalProcess+Pytest",
+                "url": "local://maos/evaluator",
+            }
+        ],
+        "provider": {"organization": "MAOS Evaluation Runtime"},
+        "version": "1.0.0",
+        "capabilities": {
+            "streaming": False,
+            "pushNotifications": False,
+            "extendedAgentCard": False,
+        },
+        "defaultInputModes": ["application/json"],
+        "defaultOutputModes": ["application/json", "text/markdown"],
+        "skills": [
+            {
+                "id": str(benchmark_id),
+                "name": str(benchmark_id),
+                "description": "Runs deterministic hidden tests and scoring without calling an LLM",
+                "inputModes": ["application/json"],
+                "outputModes": ["application/json", "text/markdown"],
+            }
+        ],
+        "protocolVersions": ["1.0-adapter"],
+    }
