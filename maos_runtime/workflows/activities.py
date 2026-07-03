@@ -24,6 +24,8 @@ async def dispatch_agent_node(activity_input: dict[str, Any]) -> dict[str, Any]:
     dependency_artifacts = _dependency_artifacts_for_executions(
         dependency_executions,
         transfer_mode=artifact_transfer_mode,
+        workflow_id=activity_input["workflow_id"],
+        consumer_node_id=node["id"],
     )
     previous_self_node = _previous_self_result_node(node, dependency_executions)
     reference_task_ids = [
@@ -85,6 +87,8 @@ def _dependency_artifacts_for_executions(
     dependency_executions: dict[str, Any],
     *,
     transfer_mode: str = "ref",
+    workflow_id: str | None = None,
+    consumer_node_id: str | None = None,
 ) -> list[dict[str, Any]]:
     """Load complete upstream artifacts before injecting dependency data.
 
@@ -99,9 +103,14 @@ def _dependency_artifacts_for_executions(
         a2a_task = execution.get("a2a_task") if isinstance(execution, dict) else None
         if not isinstance(a2a_task, dict):
             continue
-        loaded = _full_artifacts_for_task(a2a_task)
+        loaded = _full_artifacts_for_task(a2a_task, workflow_id=workflow_id)
         artifacts.extend(loaded if loaded is not None else a2a_task.get("artifacts", []))
-    return _dependency_artifacts_for_message(artifacts, transfer_mode=transfer_mode)
+    return _dependency_artifacts_for_message(
+        artifacts,
+        transfer_mode=transfer_mode,
+        workflow_id=workflow_id,
+        consumer_node_id=consumer_node_id,
+    )
 
 
 def _previous_self_result_node(node: dict[str, Any], dependency_executions: dict[str, Any]) -> str | None:
@@ -111,7 +120,11 @@ def _previous_self_result_node(node: dict[str, Any], dependency_executions: dict
     return node_id if node_id in dependency_executions else None
 
 
-def _full_artifacts_for_task(a2a_task: dict[str, Any]) -> list[dict[str, Any]] | None:
+def _full_artifacts_for_task(
+    a2a_task: dict[str, Any],
+    *,
+    workflow_id: str | None = None,
+) -> list[dict[str, Any]] | None:
     task_id = a2a_task.get("id")
     if not task_id:
         return None
@@ -119,6 +132,12 @@ def _full_artifacts_for_task(a2a_task: dict[str, Any]) -> list[dict[str, Any]] |
         response = task_artifacts({"id": task_id})
     except Exception:
         return None
+    task = response.get("task")
+    if workflow_id and isinstance(task, dict):
+        metadata = task.get("metadata") if isinstance(task.get("metadata"), dict) else {}
+        task_workflow_id = metadata.get("workflow_id") or metadata.get("workflowId")
+        if task_workflow_id and str(task_workflow_id) != str(workflow_id):
+            return None
     artifacts = response.get("artifacts")
     return artifacts if isinstance(artifacts, list) else None
 

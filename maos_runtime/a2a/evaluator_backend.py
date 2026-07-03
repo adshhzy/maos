@@ -131,7 +131,7 @@ def _complete_evaluator_task(
         metadata["elapsedSeconds"] = elapsed
         metadata["finishedAt"] = _timestamp()
         if not record["result_artifact_created"]:
-            result = _evaluator_result(metadata, report, elapsed)
+            result = _dag_node_evaluator_result(metadata, report, elapsed)
             task["artifacts"] = [_artifact_from_result(result, metadata)]
             record["result_artifact_created"] = True
         task["status"] = {
@@ -239,4 +239,17 @@ def _evaluator_result(
                 "duration_seconds": elapsed,
             }
         ],
+    }
+
+
+def _dag_node_evaluator_result(
+    metadata: dict[str, Any],
+    report: dict[str, Any],
+    elapsed: float,
+) -> dict[str, Any]:
+    return {
+        "node": metadata["nodeId"],
+        "operation": metadata.get("operation", "evaluate"),
+        "duration_seconds": elapsed,
+        "payload": _evaluator_result(metadata, report, elapsed),
     }

@@ -282,6 +282,12 @@ class TemporalTaskService:
 
         status = _status_from_raw_description(description)
         if status in {"completed", "failed", "cancelled", "terminated", "timed_out"}:
+            archived = load_archived_task(task_id)
+            if archived:
+                return prefer_archived_task(
+                    _minimal_task(task_id, status=status),
+                    archived,
+                )
             task = await self._closed_task_from_handle(task_id, handle, status)
         else:
             task = await self._running_task_from_handle(task_id, handle)
@@ -331,7 +337,14 @@ class TemporalTaskService:
         handle = self._client.get_workflow_handle(execution.id, run_id=execution.run_id)
         status = _status_from_execution(execution)
         if status in {"completed", "failed", "cancelled", "terminated", "timed_out"}:
-            task = await self._closed_task_from_handle(execution.id, handle, status)
+            archived = load_archived_task(execution.id)
+            if archived:
+                task = prefer_archived_task(
+                    _minimal_task(execution.id, status=status),
+                    archived,
+                )
+            else:
+                task = await self._closed_task_from_handle(execution.id, handle, status)
         else:
             task = await self._running_task_from_handle(execution.id, handle)
         task["submitted_at"] = execution.start_time.timestamp()

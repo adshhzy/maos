@@ -60,7 +60,8 @@ def _send_hermes_message(request: dict[str, Any]) -> dict[str, Any]:
     context_id = message.get("contextId") or f"context-{uuid.uuid4()}"
     workflow_id = request_metadata["workflow_id"]
     dependency_results = _dependency_results_from_artifacts(
-        payload.get("dependency_artifacts", [])
+        payload.get("dependency_artifacts", []),
+        expected_workflow_id=workflow_id,
     )
     graph_input = payload.get("graph_input", {})
     runtime_profile = _hermes_runtime_profile(node)

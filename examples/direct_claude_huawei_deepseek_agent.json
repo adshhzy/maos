@@ -1,0 +1,27 @@
+{
+  "id": "direct-claude-huawei-deepseek-agent",
+  "name": "Direct Claude CLI Huawei DeepSeek Agent",
+  "input": {
+    "task": "用三条要点说明这个 Agent runtime 已经接入华为云 DeepSeek。"
+  },
+  "nodes": [
+    {
+      "id": "deepseek_agent",
+      "label": "Huawei DeepSeek via Claude CLI",
+      "operation": "agent_task",
+      "agent": {
+        "backend": "claude-huawei",
+        "agent_key": "claude_huawei_deepseek",
+        "agent_name": "Claude Huawei DeepSeek",
+        "runtime_profile": "claude_huawei_print",
+        "execution_mode": "claude_huawei_print",
+        "model": "deepseek-v3.2",
+        "permission_mode": "acceptEdits",
+        "workdir": "D:\\dev\\MAOS\\temporal_execution_core",
+        "poll_seconds": 5,
+        "context_policy": "provided_context_only",
+        "prompt": "只使用输入上下文，输出最终结论。"
+      }
+    }
+  ]
+}

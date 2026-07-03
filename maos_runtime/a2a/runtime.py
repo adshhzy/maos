@@ -14,7 +14,15 @@ from maos_runtime.a2a_task_store import (
     store_idempotent_task as _store_idempotent_task,
     task_for_idempotency_key as _task_for_idempotency_key,
 )
-from maos_runtime.a2a.providers import ClaudeCliProvider, CodexCliProvider, EvaluatorProvider, HermesOneshotProvider, MulticaProvider, SimulatorProvider
+from maos_runtime.a2a.providers import (
+    ClaudeCliProvider,
+    ClaudeHuaweiCliProvider,
+    CodexCliProvider,
+    EvaluatorProvider,
+    HermesOneshotProvider,
+    MulticaProvider,
+    SimulatorProvider,
+)
 from maos_runtime.a2a.agent_service_client import _timestamp
 from maos_runtime.a2a.runtime_config_helpers import _provider_for_backend, _provider_for_node
 from maos_runtime.a2a.messages import (
@@ -62,6 +70,7 @@ def _register_default_providers() -> None:
     register_agent_provider(HermesOneshotProvider(), replace=True)
     register_agent_provider(CodexCliProvider(), replace=True)
     register_agent_provider(ClaudeCliProvider(), replace=True)
+    register_agent_provider(ClaudeHuaweiCliProvider(), replace=True)
     register_agent_provider(EvaluatorProvider(), replace=True)
 
 

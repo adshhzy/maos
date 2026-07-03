@@ -50,6 +50,12 @@
       "type": "integer",
       "minimum": 1
     },
+    "execution_policy": {
+      "$ref": "#/$defs/execution_policy"
+    },
+    "executionPolicy": {
+      "$ref": "#/$defs/execution_policy"
+    },
     "nodes": {
       "type": "array",
       "minItems": 1,
@@ -68,6 +74,28 @@
     }
   ],
   "$defs": {
+    "execution_policy": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "mode": {
+          "type": "string",
+          "enum": ["parallel", "serial", "sequential", "single", "one_at_a_time"]
+        },
+        "node_scheduling": {
+          "type": "string",
+          "enum": ["parallel", "serial", "sequential", "single", "one_at_a_time"]
+        },
+        "max_concurrent_nodes": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "maxConcurrentNodes": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
     "node": {
       "type": "object",
       "additionalProperties": true,

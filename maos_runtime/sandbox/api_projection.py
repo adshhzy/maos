@@ -58,6 +58,32 @@ def _task_list_item_for_api(task: dict[str, Any]) -> dict[str, Any]:
         item["result"] = result_item
     return item
 
+def _task_detail_for_api(task: dict[str, Any]) -> dict[str, Any]:
+    """Return a bounded task detail payload for Web/API consumers.
+
+    The raw workflow snapshot can contain full Agent outputs, prompt bodies,
+    stream histories, and large intermediate artifacts. Detail callers need
+    graph shape, node/runtime metadata, and compact result previews; full
+    artifacts stay available through provider/artifact/export endpoints.
+    """
+    item = dict(task)
+
+    state = item.get("state")
+    item["state"] = _slim_detail_state_for_api(state if isinstance(state, dict) else {})
+
+    result = item.get("result")
+    if isinstance(result, dict):
+        item["result"] = _slim_result_for_api(result)
+    elif result is not None:
+        item["result"] = _truncate_api_value(result)
+
+    item["_projection"] = {
+        "name": "task_detail",
+        "version": 1,
+        "full_outputs": "Use local-runtime-output, artifact content, or export endpoints for complete node payloads.",
+    }
+    return item
+
 def _minimal_task(
     task_id: str,
     status: str,
@@ -125,6 +151,17 @@ def _slim_state_for_api(state: dict[str, Any]) -> dict[str, Any]:
     instance_results = slim.get("instance_results")
     if isinstance(instance_results, dict):
         slim["instance_results"] = _slim_instance_results_for_api(instance_results)
+    return slim
+
+
+def _slim_detail_state_for_api(state: dict[str, Any]) -> dict[str, Any]:
+    slim = _slim_state_for_api(state)
+    results = slim.get("results")
+    if isinstance(results, dict):
+        slim["results"] = {
+            str(node_id): _slim_result_payload(payload)
+            for node_id, payload in results.items()
+        }
     return slim
 
 
@@ -265,6 +302,13 @@ def _status_from_raw_description(description: Any) -> str:
 def _normalize_task_status(status: str) -> str:
     normalized = status.lower().replace("workflow_execution_status_", "")
     return {
+        "1": "running",
+        "2": "completed",
+        "3": "failed",
+        "4": "cancelled",
+        "5": "terminated",
+        "6": "continued_as_new",
+        "7": "timed_out",
         "running": "running",
         "completed": "completed",
         "failed": "failed",

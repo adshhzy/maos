@@ -14,6 +14,7 @@ __pycache__/
 runtime_logs/
 .runtime_logs/
 logs/
+data/
 tmp_*
 D*tmp_*
 nul
@@ -21,6 +22,8 @@ nul
 cloudflared-public-webui.pid
 tools/cloudflared.exe
 /maos_cache.py
+/_validate_cache.py
+/validate_sync.py
 
 # Local generated task/demo outputs
 business_analyst_*.json

@@ -1,0 +1,275 @@
+{
+  "id": "multi-agent-coding-async-ttl-cache-hard-concurrency-compact-review-claude",
+  "name": "多 Claude 紧凑审查编码示例 - AsyncTTLCache 高并发边界版",
+  "graph_type": "control_flow",
+  "default_join": "all",
+  "max_total_visits": 14,
+  "input": {
+    "task": "请实现一个可复用的 Python 小库 `maos_cache.py`，提供生产可用的 `AsyncTTLCache` 与同步/异步装饰器能力。必须只使用 Python 标准库。最终交付只需要完整 `maos_cache.py` 主体代码、设计说明和最小可运行使用示例；不要生成 pytest、unittest 或任何测试文件代码。\n\n基础公共 API 契约必须满足：\n1. 模块导入必须成立：`from maos_cache import AsyncTTLCache, CacheInfo, ttl_cache, async_ttl_cache`。\n2. `AsyncTTLCache` 必须提供 `get_or_set`、`aget_or_set`、`invalidate`、`clear`、`cache_info`。\n3. `CacheInfo` 必须是可用于 `isinstance(info, CacheInfo)` 判断的类型；`cache_info()` 必须返回 `CacheInfo` 实例；实例必须至少包含字段/属性：`hits`、`misses`、`evictions`、`inflight`、`size`。字段名必须是 `size`。\n4. `get_or_set(key, factory)` 是同步接口；`aget_or_set(key, factory)` 是异步接口。\n5. TTL 过期必须重新计算，TTL 过期不计入 `evictions`；maxsize LRU 淘汰才计入 `evictions`；命中必须刷新 LRU 最近使用顺序。\n6. factory 抛异常不得缓存，必须清理 inflight，后续同 key 调用必须可重试。\n7. `invalidate(key)` 与 wrapper `.invalidate(*args, **kwargs)` 删除成功返回 `True`，目标不存在返回 `False`；如果目标 key 正在 inflight，也应返回 `True`，并阻止旧结果写回缓存；不得影响其他 key。\n8. `clear()` 与 wrapper `.clear()` 返回清空前的 `CacheInfo` 快照，不能返回 `None`，并清空缓存与重置统计。\n9. `ttl_cache` / `async_ttl_cache` wrapper 必须保留 `__name__`、`__doc__`，并直接暴露 `.cache_info/.invalidate/.clear`。\n10. 装饰器缓存键必须基于函数签名归一化 `args`、`kwargs`、默认参数和 kwargs 顺序，例如 `f(3)`、`f(value=3)`、`f(3, scale=1)`、`f(value=3, scale=1, offset=0)` 在语义相同时必须命中同一缓存。\n\n高级并发与边界能力要求，必须显式支持：\n11. falsy 返回值必须被正常缓存：`None`、`False`、`0`、空字符串不能被误判为未命中。\n12. `get_or_set` 必须支持同步多线程同 key single-flight：多个线程同时请求同一个 key 时，factory 只能执行一次，其他线程等待共享结果，并正确计入 hits/misses/inflight。\n13. `aget_or_set` 必须支持异步同 key single-flight：多个协程同时请求同一个 key 时，factory 只能执行一次，其他 awaiter 等待共享结果。\n14. 某个异步 awaiter 被取消时，不能取消 leader factory，也不能取消共享结果；其他 awaiter 仍应获得结果，`inflight` 最终必须归零。\n15. `clear()` 发生在某个 key 的异步 factory 正在执行期间时，factory 完成后不得把旧结果重新写回缓存，避免“清空后旧值复活”。\n16. `invalidate(key)` 发生在该 key 的异步 factory 正在执行期间时，factory 完成后不得把该 key 的旧结果重新写回缓存；同时不得影响其他 key。\n17. 不同 key 的异步 factory 必须可以并发独立执行，不能因为全局锁包住 `await factory()` 导致不同 key 串行执行。\n18. 同 key 并发异步 factory 抛异常时，失败 factory 只能执行一次，所有等待者都收到异常；异常不得缓存，下一次调用必须重新执行并可成功。"
+  },
+  "start": "contract_and_design",
+  "nodes": [
+    {
+      "id": "contract_and_design",
+      "label": "契约与并发设计",
+      "operation": "agent_task",
+      "max_visits": 1,
+      "agent": {
+        "backend": "claude",
+        "agent_key": "architect",
+        "context_policy": "provided_context_only",
+        "runtime_profile": "claude_print",
+        "execution_mode": "claude_print",
+        "poll_seconds": 30,
+        "timeout_seconds": 2100,
+        "artifact_transfer_mode": "inline",
+        "result_text_limit": 16000,
+        "prompt_payload_limit": 42000,
+        "bare": true,
+        "disable_tools": true,
+        "resolve_artifacts_before_prompt": true,
+        "tool_policy": "none",
+        "tools": [],
+        "allowed_tools": [],
+        "prompt": "请把原始任务整理成两部分：\n1. 不可变公共 API 契约：导入符号、类、方法、返回值、装饰器、wrapper 控制方法、签名归一化缓存键、统计字段。\n2. 并发设计约束：同步多线程 same-key single-flight、异步 same-key single-flight、awaiter cancellation 隔离、clear/invalidate during inflight 的 generation/version 防旧值复活、不同 key 异步并发独立、异常广播与 retry。\n\n不要写完整实现代码，不要调用工具。输出应足够具体，让实现节点能直接按此编码。"
+      },
+      "timeout_seconds": 2400
+    },
+    {
+      "id": "core_draft",
+      "label": "核心实现初稿",
+      "operation": "agent_task",
+      "join": "all",
+      "max_visits": 1,
+      "deps": [
+        "contract_and_design"
+      ],
+      "agent": {
+        "backend": "claude",
+        "agent_key": "coding",
+        "context_policy": "provided_context_only",
+        "runtime_profile": "claude_print",
+        "execution_mode": "claude_print",
+        "poll_seconds": 30,
+        "timeout_seconds": 3000,
+        "artifact_transfer_mode": "inline",
+        "result_text_limit": 28000,
+        "prompt_payload_limit": 76000,
+        "bare": true,
+        "disable_tools": true,
+        "resolve_artifacts_before_prompt": true,
+        "tool_policy": "none",
+        "tools": [],
+        "allowed_tools": [],
+        "prompt": "请基于 `contract_and_design` 实现完整 `maos_cache.py` 初稿。必须只使用 Python 标准库。最终交付只需要完整 `maos_cache.py` 主体代码、设计说明和最小可运行使用示例；不要生成 pytest、unittest 或任何测试文件代码。\n\n必须显式实现：`CacheInfo.size`、`clear() -> CacheInfo`、`invalidate() -> bool`、同步多线程 single-flight、异步 same-key single-flight、awaiter cancellation 隔离、clear/invalidate during inflight 的 generation/version 防复活、不同 key 异步并发独立、falsy 值缓存、异常不缓存且可 retry、装饰器签名归一化缓存键。\n\n输出完整可复制 Python 代码块，不要只输出 diff。不要调用任何工具，不要写本地文件，不要运行验证脚本。"
+      },
+      "timeout_seconds": 3300
+    },
+    {
+      "id": "static_review",
+      "label": "综合静态审查",
+      "operation": "agent_task",
+      "join": "all",
+      "max_visits": 1,
+      "deps": [
+        "contract_and_design",
+        "core_draft"
+      ],
+      "agent": {
+        "backend": "claude",
+        "agent_key": "reviewer",
+        "context_policy": "provided_context_only",
+        "runtime_profile": "claude_print",
+        "execution_mode": "claude_print",
+        "poll_seconds": 30,
+        "timeout_seconds": 2400,
+        "artifact_transfer_mode": "inline",
+        "result_text_limit": 18000,
+        "prompt_payload_limit": 90000,
+        "strict_structured_output": true,
+        "bare": true,
+        "disable_tools": true,
+        "resolve_artifacts_before_prompt": true,
+        "tool_policy": "none",
+        "tools": [],
+        "allowed_tools": [],
+        "prompt": "你是严格的静态审查员。你的职责不是批准，而是给修订节点制造高质量反馈。禁止输出 approved。禁止调用工具。\n\n请审查 `core_draft` 是否满足 `contract_and_design` 和原始任务，必须覆盖三类问题：\n1. API 契约：导入符号、`CacheInfo.size`、方法名、返回值、装饰器、wrapper 控制方法、签名归一化。\n2. 并发正确性：同步多线程 single-flight、异步 same-key single-flight、awaiter cancellation 隔离、clear/invalidate during inflight 防旧值复活、不同 key 异步并发独立、异常广播与 retry。\n3. 边界语义：falsy 值缓存、TTL 过期、LRU recency、evictions 统计、hits/misses/inflight 统计、factory 异常不缓存、clear 返回快照并重置统计。\n\n请做公开规格场景推演，不运行测试：例如多协程同 key、等待者取消、invalidate during inflight、clear during inflight、不同 key 并发、同 key 异常后 retry。\n\n最终只输出合法 JSON：{\"review_type\":\"static_review\",\"must_fix\":[],\"risks\":[],\"scenario_walkthroughs\":[{\"scenario\":\"\",\"expected\":\"\",\"observed_mechanism\":\"\",\"gap\":\"\",\"required_change\":\"\"}],\"revision_brief\":\"给编码节点的中文修订摘要\"}"
+      },
+      "timeout_seconds": 2700
+    },
+    {
+      "id": "core_revision",
+      "label": "核心实现修订",
+      "operation": "agent_task",
+      "join": "any",
+      "max_visits": 3,
+      "deps": [
+        "contract_and_design",
+        "core_draft",
+        "static_review",
+        "quality_gate"
+      ],
+      "agent": {
+        "backend": "claude",
+        "agent_key": "coding",
+        "context_policy": "provided_context_only",
+        "runtime_profile": "claude_print",
+        "execution_mode": "claude_print",
+        "poll_seconds": 30,
+        "timeout_seconds": 3300,
+        "artifact_transfer_mode": "inline",
+        "result_text_limit": 30000,
+        "prompt_payload_limit": 105000,
+        "bare": true,
+        "disable_tools": true,
+        "resolve_artifacts_before_prompt": true,
+        "tool_policy": "none",
+        "tools": [],
+        "allowed_tools": [],
+        "prompt": "你是核心实现修订工程师。你必须以 `core_draft` 或上一轮 `core_revision` 的完整 `maos_cache.py` 为基础做定向修订，不要从零重写。\n\n首次执行时，必须逐条吸收 `static_review` 的 `must_fix`、`risks`、`scenario_walkthroughs` 和 `revision_brief`。即使审查意见为空，也必须主动核对审查列出的公开场景。\n\n循环执行时，如果上游包含 `quality_gate.decision=needs_revision`，必须逐条吸收 gate 的 `required_changes`、`api_contract_violations`、`implementation_required_changes`、`concurrency_required_changes`、`boundary_required_changes` 和 `acceptance_checks`。\n\n输出必须包含完整可复制的 `maos_cache.py` Python 代码块，以及简短修订说明。必须保持公共 API 不改名。不要生成 pytest、unittest 或任何测试文件代码。不要调用任何工具，不要写本地文件，不要运行验证脚本。"
+      },
+      "timeout_seconds": 3600
+    },
+    {
+      "id": "quality_gate",
+      "label": "最终质量审查门",
+      "operation": "agent_task",
+      "join": "all",
+      "max_visits": 3,
+      "deps": [
+        "contract_and_design",
+        "static_review",
+        "core_revision"
+      ],
+      "agent": {
+        "backend": "claude",
+        "agent_key": "reviewer",
+        "context_policy": "provided_context_only",
+        "runtime_profile": "claude_print",
+        "execution_mode": "claude_print",
+        "poll_seconds": 30,
+        "timeout_seconds": 2700,
+        "artifact_transfer_mode": "inline",
+        "result_text_limit": 18000,
+        "prompt_payload_limit": 105000,
+        "strict_structured_output": true,
+        "risk_pass_requires_final_visit": true,
+        "required_structured_output_fields": [
+          "decision",
+          "reason",
+          "required_changes",
+          "api_contract_violations",
+          "implementation_required_changes",
+          "concurrency_required_changes",
+          "boundary_required_changes",
+          "acceptance_checks",
+          "risks"
+        ],
+        "bare": true,
+        "disable_tools": true,
+        "resolve_artifacts_before_prompt": true,
+        "tool_policy": "none",
+        "tools": [],
+        "allowed_tools": [],
+        "prompt": "你是最终质量审查门。只审查最新版 `core_revision` 是否满足 `contract_and_design`、原始任务，以及 `static_review` 提出的问题。请读取 `control_flow.visit` 作为当前审查轮次。禁止调用工具。\n\n必须逐项检查：公共 API、`CacheInfo.size`、`clear -> CacheInfo`、`invalidate -> bool`、wrapper 控制方法、falsy 缓存、同步多线程 single-flight、异步 same-key single-flight、awaiter cancellation 隔离、clear/invalidate during inflight 防旧值复活、不同 key 异步并发独立、异常广播与 retry、TTL/LRU/统计语义、签名归一化缓存键。\n\n最终只能输出一个合法 JSON 对象，不能输出 markdown 或额外文字。格式：{\"decision\":\"approved、needs_revision 或 approved_with_risk\",\"reason\":\"一句中文审查结论\",\"required_changes\":[],\"api_contract_violations\":[],\"implementation_required_changes\":[],\"concurrency_required_changes\":[],\"boundary_required_changes\":[],\"acceptance_checks\":[],\"risks\":[],\"confidence\":0.0}。\n\n当 `control_flow.visit` 小于 3 时：禁止输出 approved_with_risk；只要任一问题字段非空，就必须输出 needs_revision。只有实现完整满足 API、并发、边界和统计语义且所有问题字段均为空，才允许输出 approved。当 `control_flow.visit` 等于 3 时：不允许输出 needs_revision；如果仍有非阻塞问题，输出 approved_with_risk 并列出风险；否则输出 approved。"
+      },
+      "timeout_seconds": 3000
+    },
+    {
+      "id": "final_integrator",
+      "label": "最终代码交付",
+      "operation": "agent_task",
+      "join": "any",
+      "deps": [
+        "contract_and_design",
+        "core_revision",
+        "quality_gate"
+      ],
+      "agent": {
+        "backend": "claude",
+        "agent_key": "coordinator",
+        "context_policy": "provided_context_only",
+        "runtime_profile": "claude_print",
+        "execution_mode": "claude_print",
+        "poll_seconds": 30,
+        "timeout_seconds": 3000,
+        "artifact_transfer_mode": "inline",
+        "result_text_limit": 34000,
+        "prompt_payload_limit": 100000,
+        "bare": true,
+        "disable_tools": true,
+        "resolve_artifacts_before_prompt": true,
+        "tool_policy": "none",
+        "tools": [],
+        "allowed_tools": [],
+        "prompt": "你是最终代码交付工程师。只有在 `quality_gate` 的 `decision=approved` 或 `decision=approved_with_risk` 后才执行。\n\n关键原则：你的职责是保真封装上游最终代码，不是重新设计、重新生成或摘要代码。`core_revision` 才是最终代码所有权节点；你必须以它的最新完整 `maos_cache.py` 代码块作为最终交付代码。\n\n输出必须严格按以下顺序：\n1. `## 完整 maos_cache.py`\n2. 一个且仅一个完整 Python 代码块。这个代码块必须逐字复制最新一轮 `core_revision` 输出中的完整 `maos_cache.py` 代码块，不得重写、压缩、省略、合并、重新组织或根据自己的理解重新实现。\n3. 公共 API 契约对照表。\n4. 并发、TTL/LRU、异常不缓存、统计语义的设计说明。\n5. 最小可运行使用示例。\n6. 如果审查门是 `approved_with_risk`，单独列出遗留风险、影响范围和后续修复建议。\n\n不得生成 pytest、unittest 或任何测试文件代码。不要调用任何工具。"
+      },
+      "timeout_seconds": 3300
+    }
+  ],
+  "edges": [
+    {
+      "from": "contract_and_design",
+      "to": "core_draft",
+      "label": "契约和设计进入初稿"
+    },
+    {
+      "from": "core_draft",
+      "to": "static_review",
+      "label": "初稿提交综合静态审查"
+    },
+    {
+      "from": "static_review",
+      "to": "core_revision",
+      "label": "审查反馈强制修订"
+    },
+    {
+      "from": "core_revision",
+      "to": "quality_gate",
+      "label": "修订版提交最终 gate"
+    },
+    {
+      "from": "quality_gate",
+      "to": "core_revision",
+      "when": "(last.decision == 'needs_revision' or last.decision == 'approved_with_risk') and visits.quality_gate < 3",
+      "kind": "loop",
+      "label": "前两轮未通过：回退修订"
+    },
+    {
+      "from": "quality_gate",
+      "to": "final_integrator",
+      "when": "last.decision == 'approved'",
+      "kind": "branch",
+      "label": "最终 gate 通过：交付"
+    },
+    {
+      "from": "quality_gate",
+      "to": "final_integrator",
+      "when": "last.decision == 'approved_with_risk' and visits.quality_gate >= 3",
+      "kind": "branch",
+      "label": "第三轮带风险通过：交付"
+    }
+  ],
+  "description": "无隐藏测试泄露的紧凑多 Agent 编码图。相比三路审查版，它把 API、并发、边界审查合并成一个综合静态审查节点，但仍保留初稿、强制修订、最终 gate 和循环修订。",
+  "metadata": {
+    "comparison_group": "coding_async_ttl_cache_hard_concurrency",
+    "comparison_role": "multi_agent_hard_concurrency_compact_review",
+    "backend_variant": "claude",
+    "no_hidden_test_feedback": true,
+    "loop_policy": {
+      "review_node": "quality_gate",
+      "retry_decision": "needs_revision",
+      "pass_decision": "approved",
+      "risk_pass_decision": "approved_with_risk",
+      "max_review_visits": 3,
+      "max_revision_visits": 3,
+      "retry_allowed_until_review_visit": 2
+    },
+    "expected_advantage": [
+      "比三路审查版节点更少、运行更快",
+      "仍保证初稿至少经过一次独立静态审查和强制修订",
+      "不调用 evaluator 或测试工具，不暴露隐藏测试反馈",
+      "最终交付节点只复制 core_revision 的代码，避免二次改坏"
+    ]
+  }
+}

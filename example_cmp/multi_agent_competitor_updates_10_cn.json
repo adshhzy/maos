@@ -2,6 +2,11 @@
   "id": "multi-agent-competitor-updates-10-cn",
   "name": "多智能体协作示例 - 10家多Agent竞品近6个月动态调研",
   "graph_type": "dag",
+  "execution_policy": {
+    "mode": "serial",
+    "max_concurrent_nodes": 1,
+    "reason": "Hermes backend shares an LLM token-rate budget; run ready nodes one at a time to avoid rate limiting."
+  },
   "input": {
     "task": "帮我调研10家多Agent竞品最近6个月的产品更新、价格变化、客户案例和组织调整",
     "time_window": {

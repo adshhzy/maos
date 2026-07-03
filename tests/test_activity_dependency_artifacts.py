@@ -60,7 +60,9 @@ class ActivityDependencyArtifactTests(unittest.TestCase):
             }
 
         artifacts = _dependency_artifacts_for_executions(
-            {"upstream": {"a2a_task": {"id": task_id, "artifacts": [compact_artifact]}}}
+            {"upstream": {"a2a_task": {"id": task_id, "artifacts": [compact_artifact]}}},
+            workflow_id="workflow-a",
+            consumer_node_id="downstream",
         )
 
         payload = artifacts[0]["parts"][0]["data"]["payload"]
@@ -88,13 +90,19 @@ class ActivityDependencyArtifactTests(unittest.TestCase):
         }
         with TASKS_LOCK:
             TASKS[task_id] = {
-                "task": {"id": task_id, "artifacts": [full_artifact], "metadata": {}},
+                "task": {
+                    "id": task_id,
+                    "artifacts": [full_artifact],
+                    "metadata": {"workflow_id": "workflow-a"},
+                },
                 "result_artifact_created": True,
             }
 
         artifacts = _dependency_artifacts_for_executions(
             {"upstream": {"a2a_task": {"id": task_id, "artifacts": []}}},
             transfer_mode="inline",
+            workflow_id="workflow-a",
+            consumer_node_id="downstream",
         )
 
         payload = artifacts[0]["parts"][0]["data"]["payload"]
@@ -131,6 +139,59 @@ class ActivityDependencyArtifactTests(unittest.TestCase):
 
         payload = artifacts[0]["parts"][0]["data"]["payload"]
         self.assertEqual(payload["summary"], compact_text)
+
+    def test_does_not_load_full_artifact_from_a_different_workflow(self) -> None:
+        task_id = "a2a-upstream-cross-run"
+        full_artifact = {
+            "artifactId": "artifact-old",
+            "name": "dag-node-result",
+            "parts": [
+                {
+                    "data": {
+                        "node": "upstream",
+                        "operation": "agent_task",
+                        "payload": {"latest_comment": "old workflow full output"},
+                    },
+                    "mediaType": "application/json",
+                }
+            ],
+            "metadata": {"nodeId": "upstream", "workflow_id": "workflow-old"},
+        }
+        compact_artifact = {
+            "artifactId": "artifact-current",
+            "name": "dag-node-result",
+            "parts": [
+                {
+                    "data": {
+                        "node": "upstream",
+                        "operation": "agent_task",
+                        "payload": {"latest_comment": "current compact output"},
+                    },
+                    "mediaType": "application/json",
+                }
+            ],
+            "metadata": {"nodeId": "upstream", "workflow_id": "workflow-current"},
+        }
+        with TASKS_LOCK:
+            TASKS[task_id] = {
+                "task": {
+                    "id": task_id,
+                    "artifacts": [full_artifact],
+                    "metadata": {"workflow_id": "workflow-old"},
+                },
+                "result_artifact_created": True,
+            }
+
+        artifacts = _dependency_artifacts_for_executions(
+            {"upstream": {"a2a_task": {"id": task_id, "artifacts": [compact_artifact]}}},
+            transfer_mode="inline",
+            workflow_id="workflow-current",
+            consumer_node_id="downstream",
+        )
+
+        payload = artifacts[0]["parts"][0]["data"]["payload"]
+        self.assertEqual(payload["summary"], "current compact output")
+        self.assertNotIn("old workflow full output", str(payload))
 
 
 if __name__ == "__main__":

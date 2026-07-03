@@ -13,6 +13,8 @@ import os
 from pathlib import Path
 from typing import Any
 
+from maos_runtime.persistence import persist_artifact_record
+
 
 ARTIFACT_STORE_VERSION = "maos-artifact-v1"
 DEFAULT_MIME_TYPE = "application/json"
@@ -27,14 +29,26 @@ def store_dependency_artifact(
     mime_type: str = DEFAULT_MIME_TYPE,
 ) -> dict[str, Any]:
     encoded = json.dumps(content, ensure_ascii=False, sort_keys=True).encode("utf-8")
-    digest = hashlib.sha256(encoded).hexdigest()
+    content_digest = hashlib.sha256(encoded).hexdigest()
+    scoped_digest_payload = {
+        "content_hash": f"sha256:{content_digest}",
+        "scope": _artifact_scope(metadata or {}),
+        "source_artifact_id": source_artifact_id,
+    }
+    scoped_encoded = json.dumps(
+        scoped_digest_payload,
+        ensure_ascii=False,
+        sort_keys=True,
+    ).encode("utf-8")
+    digest = hashlib.sha256(scoped_encoded).hexdigest()
     artifact_ref = f"sha256-{digest}"
     record = {
         "version": ARTIFACT_STORE_VERSION,
         "artifact_ref": artifact_ref,
         "uri": _artifact_content_url(artifact_ref),
         "internal_uri": f"maos-artifact://{artifact_ref}",
-        "content_hash": f"sha256:{digest}",
+        "content_hash": f"sha256:{content_digest}",
+        "scope_hash": f"sha256:{digest}",
         "mime_type": mime_type,
         "size": len(encoded),
         "summary": summary or _summary_from_content(content),
@@ -46,6 +60,10 @@ def store_dependency_artifact(
     path.parent.mkdir(parents=True, exist_ok=True)
     if not path.exists():
         path.write_text(json.dumps(record, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    try:
+        persist_artifact_record(record)
+    except Exception:
+        pass
     return _public_record(record, include_content=False)
 
 
@@ -96,6 +114,26 @@ def _summary_from_content(content: dict[str, Any]) -> str:
     return _clip_summary(json.dumps(content, ensure_ascii=False, sort_keys=True))
 
 
+def _artifact_scope(metadata: dict[str, Any]) -> dict[str, Any]:
+    """Return fields that isolate artifact refs between workflow executions."""
+
+    scope_keys = (
+        "producer_workflow_id",
+        "consumer_workflow_id",
+        "consumer_node_id",
+        "workflow_id",
+        "workflowId",
+        "nodeId",
+        "a2aTaskId",
+        "sourceTaskId",
+    )
+    return {
+        key: metadata.get(key)
+        for key in scope_keys
+        if metadata.get(key) not in (None, "")
+    }
+
+
 def _clip_summary(value: str, limit: int = 600) -> str:
     text = value.strip()
     return text if len(text) <= limit else text[:limit] + "...<summary-truncated>"
@@ -108,6 +146,7 @@ def _public_record(record: dict[str, Any], *, include_content: bool) -> dict[str
         "uri",
         "internal_uri",
         "content_hash",
+        "scope_hash",
         "mime_type",
         "size",
         "summary",

@@ -1,0 +1,52 @@
+{
+  "id": "evaluate-async-ttl-cache-hard-concurrency-latest-single-vs-multi-claude",
+  "name": "确定性评测 - AsyncTTLCache 高并发边界 单Agent vs 多Agent",
+  "graph_type": "dag",
+  "input": {
+    "benchmark_id": "async_ttl_cache_hard_concurrency",
+    "single_selector": {
+      "graph_id": "single-agent-coding-async-ttl-cache-hard-concurrency-claude",
+      "node_id": "single_coding_agent",
+      "node_status": "completed",
+      "backend": "claude",
+      "status": "completed"
+    },
+    "multi_selector": {
+      "graph_id": "multi-agent-coding-async-ttl-cache-hard-concurrency-simple-review-loop-claude",
+      "node_id": "final_integrator",
+      "node_status": "completed",
+      "backend": "claude",
+      "status": "completed"
+    }
+  },
+  "nodes": [
+    {
+      "id": "deterministic_evaluator",
+      "label": "高并发边界确定性评测",
+      "operation": "evaluate",
+      "agent": {
+        "backend": "evaluator",
+        "agent_key": "async_ttl_cache_hard_concurrency",
+        "context_policy": "provided_context_only",
+        "runtime_profile": "deterministic",
+        "execution_mode": "local_pytest",
+        "poll_seconds": 5,
+        "timeout_seconds": 300,
+        "evaluator": {
+          "benchmark_id": "async_ttl_cache_hard_concurrency"
+        }
+      },
+      "params": {
+        "benchmark_id": "async_ttl_cache_hard_concurrency"
+      },
+      "timeout_seconds": 420
+    }
+  ],
+  "edges": [],
+  "description": "自动选择最新完成的 hard concurrency 单 Claude 基线和多 Claude 简化循环审查结果，运行高并发边界确定性隐藏测试。",
+  "metadata": {
+    "comparison_group": "coding_async_ttl_cache_hard_concurrency",
+    "backend_variant": "evaluator",
+    "source": "latest_completed_task_selector"
+  }
+}

@@ -1,6 +1,10 @@
 import unittest
 
-from maos_runtime.workflows.json_dag import JsonDagWorkflow
+from maos_runtime.workflows.json_dag import (
+    JsonDagWorkflow,
+    _max_concurrent_nodes,
+    _normalize_execution_policy,
+)
 
 
 class WorkflowLoopDependencyTests(unittest.TestCase):
@@ -61,6 +65,40 @@ class WorkflowLoopDependencyTests(unittest.TestCase):
         )
 
         self.assertNotIn("core_implementation", dependencies)
+
+    def test_serial_execution_policy_limits_ready_nodes_to_one(self) -> None:
+        workflow = JsonDagWorkflow()
+        workflow._execution_policy = _normalize_execution_policy(
+            {"execution_policy": {"mode": "serial"}}
+        )
+
+        self.assertEqual(_max_concurrent_nodes(workflow._execution_policy), 1)
+        self.assertEqual(
+            workflow._limit_ready_nodes_by_execution_policy(["b", "c", "d"], {}),
+            ["b"],
+        )
+
+    def test_serial_execution_policy_waits_when_one_node_is_running(self) -> None:
+        workflow = JsonDagWorkflow()
+        workflow._execution_policy = _normalize_execution_policy(
+            {"execution_policy": {"mode": "serial"}}
+        )
+        running = {"a": object()}
+
+        self.assertEqual(
+            workflow._limit_ready_nodes_by_execution_policy(["b", "c"], running),
+            [],
+        )
+
+    def test_default_parallel_policy_keeps_all_ready_nodes(self) -> None:
+        workflow = JsonDagWorkflow()
+        workflow._execution_policy = _normalize_execution_policy({})
+
+        self.assertIsNone(_max_concurrent_nodes(workflow._execution_policy))
+        self.assertEqual(
+            workflow._limit_ready_nodes_by_execution_policy(["b", "c"], {}),
+            ["b", "c"],
+        )
 
 
 if __name__ == "__main__":

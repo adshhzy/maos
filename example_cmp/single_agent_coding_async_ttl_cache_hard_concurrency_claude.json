@@ -1,0 +1,42 @@
+{
+  "id": "single-agent-coding-async-ttl-cache-hard-concurrency-claude",
+  "name": "单 Claude 编码基线 - AsyncTTLCache 高并发边界版",
+  "graph_type": "dag",
+  "input": {
+    "task": "请实现一个可复用的 Python 小库 `maos_cache.py`，提供生产可用的 `AsyncTTLCache` 与同步/异步装饰器能力。必须只使用 Python 标准库。最终交付只需要完整 `maos_cache.py` 主体代码、设计说明和最小可运行使用示例；不要生成 pytest、unittest 或任何测试文件代码。\n\n基础公共 API 契约必须满足：\n1. 模块导入必须成立：`from maos_cache import AsyncTTLCache, CacheInfo, ttl_cache, async_ttl_cache`。\n2. `AsyncTTLCache` 必须提供 `get_or_set`、`aget_or_set`、`invalidate`、`clear`、`cache_info`。\n3. `CacheInfo` 必须是可用于 `isinstance(info, CacheInfo)` 判断的类型；`cache_info()` 必须返回 `CacheInfo` 实例；实例必须至少包含字段/属性：`hits`、`misses`、`evictions`、`inflight`、`size`。字段名必须是 `size`。\n4. `get_or_set(key, factory)` 是同步接口；`aget_or_set(key, factory)` 是异步接口。\n5. TTL 过期必须重新计算，TTL 过期不计入 `evictions`；maxsize LRU 淘汰才计入 `evictions`；命中必须刷新 LRU 最近使用顺序。\n6. factory 抛异常不得缓存，必须清理 inflight，后续同 key 调用必须可重试。\n7. `invalidate(key)` 与 wrapper `.invalidate(*args, **kwargs)` 删除成功返回 `True`，目标不存在返回 `False`，不得影响其他 key。\n8. `clear()` 与 wrapper `.clear()` 返回清空前的 `CacheInfo` 快照，不能返回 `None`，并清空缓存与重置统计。\n9. `ttl_cache` / `async_ttl_cache` wrapper 必须保留 `__name__`、`__doc__`，并直接暴露 `.cache_info/.invalidate/.clear`。\n10. 装饰器缓存键必须基于函数签名归一化 `args`、`kwargs`、默认参数和 kwargs 顺序，例如 `f(3)`、`f(value=3)`、`f(3, scale=1)`、`f(value=3, scale=1, offset=0)` 在语义相同时必须命中同一缓存。\n\n高级并发与边界能力要求，必须显式支持：\n11. falsy 返回值必须被正常缓存：`None`、`False`、`0`、空字符串不能被误判为未命中。\n12. `get_or_set` 必须支持同步多线程同 key single-flight：多个线程同时请求同一个 key 时，factory 只能执行一次，其他线程等待共享结果，并正确计入 hits/misses/inflight。\n13. `aget_or_set` 必须支持异步同 key single-flight：多个协程同时请求同一个 key 时，factory 只能执行一次，其他 awaiter 等待共享结果。\n14. 某个异步 awaiter 被取消时，不能取消 leader factory，也不能取消共享结果；其他 awaiter 仍应获得结果，`inflight` 最终必须归零。\n15. `clear()` 发生在某个 key 的异步 factory 正在执行期间时，factory 完成后不得把旧结果重新写回缓存，避免“清空后旧值复活”。\n16. `invalidate(key)` 发生在该 key 的异步 factory 正在执行期间时，factory 完成后不得把该 key 的旧结果重新写回缓存；同时不得影响其他 key。\n17. 不同 key 的异步 factory 必须可以并发独立执行，不能因为全局锁包住 `await factory()` 导致不同 key 串行执行。\n18. 同 key 并发异步 factory 抛异常时，失败 factory 只能执行一次，所有等待者都收到异常；异常不得缓存，下一次调用必须重新执行并可成功。"
+  },
+  "nodes": [
+    {
+      "id": "single_coding_agent",
+      "label": "单Agent完成完整编码任务",
+      "operation": "agent_task",
+      "agent": {
+        "backend": "claude",
+        "agent_key": "coding",
+        "context_policy": "provided_context_only",
+        "runtime_profile": "claude_print",
+        "execution_mode": "claude_print",
+        "poll_seconds": 30,
+        "timeout_seconds": 3600,
+        "artifact_transfer_mode": "inline",
+        "result_text_limit": 20000,
+        "prompt_payload_limit": 32000,
+        "bare": true,
+        "prompt": "请实现一个可复用的 Python 小库 `maos_cache.py`，提供生产可用的 `AsyncTTLCache` 与同步/异步装饰器能力。必须只使用 Python 标准库。最终交付只需要完整 `maos_cache.py` 主体代码、设计说明和最小可运行使用示例；不要生成 pytest、unittest 或任何测试文件代码。\n\n基础公共 API 契约必须满足：\n1. 模块导入必须成立：`from maos_cache import AsyncTTLCache, CacheInfo, ttl_cache, async_ttl_cache`。\n2. `AsyncTTLCache` 必须提供 `get_or_set`、`aget_or_set`、`invalidate`、`clear`、`cache_info`。\n3. `CacheInfo` 必须是可用于 `isinstance(info, CacheInfo)` 判断的类型；`cache_info()` 必须返回 `CacheInfo` 实例；实例必须至少包含字段/属性：`hits`、`misses`、`evictions`、`inflight`、`size`。字段名必须是 `size`。\n4. `get_or_set(key, factory)` 是同步接口；`aget_or_set(key, factory)` 是异步接口。\n5. TTL 过期必须重新计算，TTL 过期不计入 `evictions`；maxsize LRU 淘汰才计入 `evictions`；命中必须刷新 LRU 最近使用顺序。\n6. factory 抛异常不得缓存，必须清理 inflight，后续同 key 调用必须可重试。\n7. `invalidate(key)` 与 wrapper `.invalidate(*args, **kwargs)` 删除成功返回 `True`，目标不存在返回 `False`，不得影响其他 key。\n8. `clear()` 与 wrapper `.clear()` 返回清空前的 `CacheInfo` 快照，不能返回 `None`，并清空缓存与重置统计。\n9. `ttl_cache` / `async_ttl_cache` wrapper 必须保留 `__name__`、`__doc__`，并直接暴露 `.cache_info/.invalidate/.clear`。\n10. 装饰器缓存键必须基于函数签名归一化 `args`、`kwargs`、默认参数和 kwargs 顺序，例如 `f(3)`、`f(value=3)`、`f(3, scale=1)`、`f(value=3, scale=1, offset=0)` 在语义相同时必须命中同一缓存。\n\n高级并发与边界能力要求，必须显式支持：\n11. falsy 返回值必须被正常缓存：`None`、`False`、`0`、空字符串不能被误判为未命中。\n12. `get_or_set` 必须支持同步多线程同 key single-flight：多个线程同时请求同一个 key 时，factory 只能执行一次，其他线程等待共享结果，并正确计入 hits/misses/inflight。\n13. `aget_or_set` 必须支持异步同 key single-flight：多个协程同时请求同一个 key 时，factory 只能执行一次，其他 awaiter 等待共享结果。\n14. 某个异步 awaiter 被取消时，不能取消 leader factory，也不能取消共享结果；其他 awaiter 仍应获得结果，`inflight` 最终必须归零。\n15. `clear()` 发生在某个 key 的异步 factory 正在执行期间时，factory 完成后不得把旧结果重新写回缓存，避免“清空后旧值复活”。\n16. `invalidate(key)` 发生在该 key 的异步 factory 正在执行期间时，factory 完成后不得把该 key 的旧结果重新写回缓存；同时不得影响其他 key。\n17. 不同 key 的异步 factory 必须可以并发独立执行，不能因为全局锁包住 `await factory()` 导致不同 key 串行执行。\n18. 同 key 并发异步 factory 抛异常时，失败 factory 只能执行一次，所有等待者都收到异常；异常不得缓存，下一次调用必须重新执行并可成功。\n\n你是资深 Python 并发库工程师。请独立完成整个编码任务。输出顺序必须是：\n1. 一个完整可复制的 `maos_cache.py` 代码块；\n2. 公共 API 与高级并发能力对照表；\n3. 关键设计说明，尤其说明同步多线程 single-flight、异步取消隔离、clear/invalidate 与 inflight 的一致性；\n4. 最小可运行使用示例。\n\n不要调用工具，不要写本地文件，不要运行自我验证脚本，不要创建测试文件。自检只能用文字 checklist 逐项核对。",
+        "disable_tools": true,
+        "resolve_artifacts_before_prompt": true,
+        "tool_policy": "none",
+        "tools": [],
+        "allowed_tools": []
+      },
+      "timeout_seconds": 3900
+    }
+  ],
+  "edges": [],
+  "description": "单 Agent 高并发边界基线：任务显式要求取消传播、inflight 与 clear/invalidate 一致性、同步多线程 single-flight、不同 key 异步并发独立性和 falsy 值缓存。",
+  "metadata": {
+    "comparison_group": "coding_async_ttl_cache_hard_concurrency",
+    "comparison_role": "single_agent_hard_concurrency_baseline",
+    "backend_variant": "claude"
+  }
+}

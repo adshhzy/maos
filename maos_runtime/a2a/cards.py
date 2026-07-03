@@ -143,16 +143,49 @@ def _codex_agent_card(node: dict[str, Any]) -> dict[str, Any]:
 def _claude_agent_card(node: dict[str, Any]) -> dict[str, Any]:
     agent = _node_agent_config(node)
     agent_name = agent.get("agent_name") or agent.get("agent_key") or "claude-cli-agent"
+    return _claude_cli_agent_card(
+        node,
+        agent_name=str(agent_name),
+        description=f"Claude CLI one-shot Agent runtime for control-flow node {node['id']}",
+        url="local://claude/print",
+        organization="Anthropic Claude Code CLI",
+    )
+
+
+def _claude_huawei_agent_card(node: dict[str, Any]) -> dict[str, Any]:
+    agent = _node_agent_config(node)
+    agent_name = agent.get("agent_name") or agent.get("agent_key") or "claude-huawei-deepseek-agent"
+    return _claude_cli_agent_card(
+        node,
+        agent_name=str(agent_name),
+        description=(
+            f"Claude CLI one-shot Agent runtime routed to Huawei Cloud DeepSeek "
+            f"for control-flow node {node['id']}"
+        ),
+        url="local://claude-huawei/print",
+        organization="Huawei Cloud DeepSeek via Claude Code CLI",
+    )
+
+
+def _claude_cli_agent_card(
+    node: dict[str, Any],
+    *,
+    agent_name: str,
+    description: str,
+    url: str,
+    organization: str,
+) -> dict[str, Any]:
+    agent = _node_agent_config(node)
     return {
-        "name": str(agent_name),
-        "description": f"Claude CLI one-shot Agent runtime for control-flow node {node['id']}",
+        "name": agent_name,
+        "description": description,
         "supportedInterfaces": [
             {
                 "transport": "LocalProcess+ClaudeCLI",
-                "url": "local://claude/print",
+                "url": url,
             }
         ],
-        "provider": {"organization": "Anthropic Claude Code CLI"},
+        "provider": {"organization": organization},
         "version": "1.0.0-adapter",
         "capabilities": {
             "streaming": False,

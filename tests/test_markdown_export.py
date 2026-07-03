@@ -114,6 +114,10 @@ def test_export_task_markdown_renders_rich_evaluator_report(tmp_path):
             "files": {"maos_cache.py": {"lines": 90, "chars": 3000}},
             "extraction_errors": [],
             "hidden_tests": {"passed": 19, "failed": 12, "errors": 0, "skipped": 1},
+            "hidden_test_cases": [
+                {"name": "test_cache_hit", "display": "cache hit", "status": "passed"},
+                {"name": "test_concurrency", "display": "concurrency", "status": "failed"},
+            ],
             "commands": [
                 {
                     "name": "hidden_pytest",
@@ -140,6 +144,10 @@ def test_export_task_markdown_renders_rich_evaluator_report(tmp_path):
             "files": {"maos_cache.py": {"lines": 120, "chars": 4500}},
             "extraction_errors": [],
             "hidden_tests": {"passed": 26, "failed": 5, "errors": 0, "skipped": 1},
+            "hidden_test_cases": [
+                {"name": "test_cache_hit", "display": "cache hit", "status": "passed"},
+                {"name": "test_concurrency", "display": "concurrency", "status": "passed"},
+            ],
             "commands": [
                 {
                     "name": "hidden_pytest",
@@ -177,6 +185,9 @@ def test_export_task_markdown_renders_rich_evaluator_report(tmp_path):
     assert "task-single-new" in exported
     assert "task-multi-new" in exported
     assert "## Hidden Test Summary" in exported
+    assert "## Hidden Test Matrix" in exported
+    assert "| Single Agent | PASS | FAIL |" in exported
+    assert "| Multi Agent | PASS | PASS |" in exported
     assert "12 failed, 19 passed, 1 skipped" in exported
     assert "stderr:" not in exported
     assert "## Command Details And Failure Reasons" in exported

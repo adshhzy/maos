@@ -7,7 +7,7 @@ from unittest.mock import patch
 from maos_runtime.a2a import poll_task, provider_capabilities, send_message
 from maos_runtime.a2a_task_store import TASKS, TASKS_LOCK
 from maos_runtime.evaluation.extraction import extract_python_files
-from maos_runtime.evaluation.runner import run_evaluation
+from maos_runtime.evaluation.runner import _output_from_task, _pytest_summary, _run_hidden_pytest, run_evaluation
 from maos_runtime.evaluation.sandbox import CommandResult
 
 
@@ -30,6 +30,23 @@ class AsyncTTLCache:
 这里包含设计说明和使用示例。
 """
 
+COMPLETE_CORE_OUTPUT = """
+## maos_cache.py
+```python
+class CacheInfo:
+    pass
+
+class AsyncTTLCache:
+    pass
+
+def ttl_cache(maxsize=128, ttl=60):
+    pass
+
+def async_ttl_cache(maxsize=128, ttl=60):
+    pass
+```
+"""
+
 
 class EvaluatorProviderTests(unittest.TestCase):
     def setUp(self) -> None:
@@ -45,13 +62,144 @@ class EvaluatorProviderTests(unittest.TestCase):
         self.assertTrue(extracted.ok)
         self.assertIn("class AsyncTTLCache", extracted.files["maos_cache.py"])
 
+    def test_final_integrator_falls_back_to_complete_core_output(self) -> None:
+        task = {
+            "task_id": "task-multi-example",
+            "state": {
+                "nodes": [
+                    {"id": "core_implementation", "status": "completed", "backend": "simulator"},
+                    {"id": "final_integrator", "status": "completed", "backend": "simulator"},
+                ],
+            },
+            "result": {
+                "results": {
+                    "core_implementation": {"latest_comment": COMPLETE_CORE_OUTPUT},
+                    "final_integrator": {"latest_comment": MULTI_OUTPUT},
+                },
+            },
+        }
+
+        output = _output_from_task(
+            task,
+            node_id="final_integrator",
+            api_base="http://sandbox.example",
+        )
+
+        self.assertIn("def ttl_cache", output)
+        self.assertIn("def async_ttl_cache", output)
+
+    @patch("maos_runtime.evaluation.runner.request_json")
+    def test_runner_prefers_full_provider_artifact_over_truncated_local_output(
+        self,
+        mock_request_json,
+    ) -> None:
+        runtime_id = "a2a-task-single_coding_agent-full-artifact"
+        with TASKS_LOCK:
+            TASKS[runtime_id] = {
+                "task": {
+                    "id": runtime_id,
+                    "artifacts": [
+                        {
+                            "parts": [
+                                {
+                                    "data": {
+                                        "payload": {
+                                            "latest_comment": COMPLETE_CORE_OUTPUT,
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    ],
+                },
+                "result_artifact_created": True,
+            }
+        task = {
+            "task_id": "task-single-example",
+            "state": {
+                "nodes": [
+                    {
+                        "id": "single_coding_agent",
+                        "status": "completed",
+                        "backend": "claude",
+                        "claude_task_id": runtime_id,
+                    },
+                ],
+            },
+            "result": {
+                "results": {
+                    "single_coding_agent": {
+                        "latest_comment": "```python\nclass AsyncTTLCache:\n    pass\n...<truncated>",
+                    },
+                },
+            },
+        }
+        mock_request_json.return_value = {
+            "final_output": {
+                "content": "```python\nclass AsyncTTLCache:\n    pass\n...<truncated>",
+            }
+        }
+
+        output = _output_from_task(
+            task,
+            node_id="single_coding_agent",
+            api_base="http://sandbox.example",
+        )
+
+        self.assertIn("def ttl_cache", output)
+        self.assertNotIn("...<truncated>", output)
+
+    @patch("maos_runtime.evaluation.runner.request_json")
+    def test_runner_reads_claude_huawei_local_runtime_output(
+        self,
+        mock_request_json,
+    ) -> None:
+        task = {
+            "task_id": "task-multi-huawei",
+            "state": {
+                "nodes": [
+                    {
+                        "id": "final_integrator",
+                        "status": "completed",
+                        "backend": "claude-huawei",
+                        "a2a_task_id": "a2a-task-final-huawei",
+                        "claude_task_id": "a2a-task-final-huawei",
+                    },
+                ],
+            },
+            "result": {
+                "results": {
+                    "final_integrator": {
+                        "latest_comment": "truncated handoff without maos_cache.py"
+                    },
+                },
+            },
+        }
+        mock_request_json.return_value = {
+            "final_output": {"content": COMPLETE_CORE_OUTPUT},
+        }
+
+        output = _output_from_task(
+            task,
+            node_id="final_integrator",
+            api_base="http://sandbox.example",
+        )
+
+        self.assertIn("class AsyncTTLCache", output)
+        self.assertIn("def ttl_cache", output)
+        mock_request_json.assert_called_once()
+        self.assertEqual(
+            mock_request_json.call_args.kwargs["params"]["backend"],
+            "claude-huawei",
+        )
+
     @patch("maos_runtime.evaluation.runner.run_command")
     def test_runner_scores_direct_outputs_without_llm(self, mock_run_command) -> None:
         mock_run_command.return_value = CommandResult(
             name="mock",
             command=["python", "-m", "pytest"],
             exit_code=0,
-            stdout="8 passed in 0.01s",
+            stdout="99 passed in 0.01s",
             stderr="",
             duration_seconds=0.01,
         )
@@ -83,6 +231,63 @@ class EvaluatorProviderTests(unittest.TestCase):
         self.assertEqual(report["comparison_sources"]["multi"]["task_id"], "task-multi-example")
         self.assertEqual(report["comparison_sources"]["multi"]["node_id"], "final_integrator")
         self.assertIn("deterministic evaluator provider", report["markdown"])
+        self.assertIn("test_matrix", report)
+        self.assertIn("hidden_test_cases", report["single"])
+        self.assertIn("hidden_test_cases", report["multi"])
+        self.assertTrue(report["test_matrix"]["tests"])
+        first_test = report["test_matrix"]["tests"][0]["name"]
+        self.assertEqual(report["test_matrix"]["rows"][0]["statuses"][first_test], "passed")
+        self.assertEqual(report["test_matrix"]["rows"][1]["statuses"][first_test], "passed")
+        self.assertIn("## Hidden Test Matrix", report["markdown"])
+
+    @patch("maos_runtime.evaluation.runner.run_command")
+    def test_hidden_pytest_timeout_isolated_to_single_test(
+        self,
+        mock_run_command,
+    ) -> None:
+        mock_run_command.side_effect = [
+            CommandResult(
+                name="hidden_pytest",
+                command=["python", "-m", "pytest"],
+                exit_code=124,
+                stdout=".",
+                stderr="Command timed out after 90 seconds",
+                duration_seconds=90,
+            ),
+            CommandResult(
+                name="hidden_pytest::test_fast",
+                command=["python", "-m", "pytest", "hidden_tests.py::test_fast"],
+                exit_code=0,
+                stdout="1 passed in 0.01s",
+                stderr="",
+                duration_seconds=0.01,
+            ),
+            CommandResult(
+                name="hidden_pytest::test_hangs",
+                command=["python", "-m", "pytest", "hidden_tests.py::test_hangs"],
+                exit_code=124,
+                stdout="",
+                stderr="Command timed out after 8 seconds",
+                duration_seconds=8,
+            ),
+        ]
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Path(tmp)
+            (workspace / "hidden_tests.py").write_text(
+                "def test_fast():\n    pass\n\n"
+                "def test_hangs():\n    pass\n",
+                encoding="utf-8",
+            )
+
+            result = _run_hidden_pytest(workspace)
+
+        self.assertEqual(result.exit_code, 1)
+        summary = _pytest_summary(result)
+        self.assertEqual(summary["passed"], 1)
+        self.assertEqual(summary["failed"], 1)
+        self.assertIn("FAILED hidden_tests.py::test_hangs - timed out", result.stdout)
+        self.assertIn("MAOS_PYTEST_CASE name=test_fast status=passed", result.stdout)
+        self.assertIn("MAOS_PYTEST_CASE name=test_hangs status=timeout", result.stdout)
 
     @patch("maos_runtime.evaluation.runner.request_json")
     @patch("maos_runtime.evaluation.runner.run_command")

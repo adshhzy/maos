@@ -6,7 +6,15 @@
 
 from __future__ import annotations
 
-from maos_runtime.a2a_constants import CLAUDE_BACKEND, CODEX_BACKEND, EVALUATOR_BACKEND, HERMES_BACKEND, MULTICA_BACKEND, SIMULATOR_BACKEND
+from maos_runtime.a2a_constants import (
+    CLAUDE_BACKEND,
+    CLAUDE_HUAWEI_BACKEND,
+    CODEX_BACKEND,
+    EVALUATOR_BACKEND,
+    HERMES_BACKEND,
+    MULTICA_BACKEND,
+    SIMULATOR_BACKEND,
+)
 from maos_runtime.a2a_provider_base import ProviderRuntime
 
 
@@ -30,6 +38,12 @@ _BACKEND_ALIASES = {
     "claude-cli": CLAUDE_BACKEND,
     "direct-claude": CLAUDE_BACKEND,
     "claude-direct": CLAUDE_BACKEND,
+    "claude-huawei": CLAUDE_HUAWEI_BACKEND,
+    "claude-huawei-cli": CLAUDE_HUAWEI_BACKEND,
+    "huawei-claude": CLAUDE_HUAWEI_BACKEND,
+    "huawei-deepseek": CLAUDE_HUAWEI_BACKEND,
+    "deepseek-huawei": CLAUDE_HUAWEI_BACKEND,
+    "deepseek-v3.2": CLAUDE_HUAWEI_BACKEND,
     "evaluator": EVALUATOR_BACKEND,
     "evaluation": EVALUATOR_BACKEND,
     "deterministic-evaluator": EVALUATOR_BACKEND,

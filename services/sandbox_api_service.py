@@ -13,14 +13,25 @@ from pydantic import BaseModel, Field
 
 from maos_runtime.a2a.artifact_store import load_artifact
 from maos_runtime.a2a.codex_pool import codex_runtime_pool_status
+from maos_runtime.persistence import (
+    execution_store_db_file,
+    list_workflow_runs,
+    load_workflow_task_snapshot,
+)
 from maos_runtime.sandbox_runtime import (
     DEFAULT_TEMPORAL_PORT,
     ControlFlowTaskService,
 )
 from maos_runtime.graph.schema import GraphValidationError
+from maos_runtime.sandbox.api_projection import _task_detail_for_api
 from maos_runtime.sandbox.preview import preview_state
+from maos_runtime.sandbox.task_list import (
+    refresh_execution_store_from_live_tasks,
+    snapshot_with_execution_store_tasks,
+)
 from web.sandbox_api_server import list_examples, load_graph
 from web.markdown_export import export_task_markdown
+from web.replay_export import ReplayExportError, export_task_replay
 from web.web_agent_api import (
     build_agent_input,
     build_agent_trace,
@@ -81,6 +92,11 @@ class MarkdownExportRequest(BaseModel):
     node_id: str | None = None
 
 
+class ReplayExportRequest(BaseModel):
+    output_dir: str | None = None
+    frame_duration_ms: int = 900
+
+
 def create_app(config: SandboxApiConfig | None = None) -> FastAPI:
     app = FastAPI(
         title="MAOS Persistent Execution Sandbox API",
@@ -135,6 +151,7 @@ def create_app(config: SandboxApiConfig | None = None) -> FastAPI:
             "service": "persistent-execution-sandbox-api",
             "simulator": cfg.simulator_url,
             "agent_service": os.environ.get("AGENT_SERVICE_API_BASE", "http://127.0.0.1:8091"),
+            "execution_store": execution_store_db_file(),
             "runtime": runtime_info,
         }
 
@@ -150,7 +167,7 @@ def create_app(config: SandboxApiConfig | None = None) -> FastAPI:
     @app.get("/api/tasks", tags=["tasks"])
     @app.get("/state", tags=["tasks"], include_in_schema=False)
     def list_tasks() -> dict[str, Any]:
-        return _manager().snapshot()
+        return task_list_snapshot_with_execution_store_merge(_manager())
 
     @app.post("/api/tasks", response_model=TaskBatchResponse, tags=["tasks"], status_code=201)
     @app.post("/run-batch", response_model=TaskBatchResponse, tags=["tasks"], include_in_schema=False, status_code=201)
@@ -184,9 +201,29 @@ def create_app(config: SandboxApiConfig | None = None) -> FastAPI:
     @app.get("/api/tasks/{task_id}", tags=["tasks"])
     def get_task(task_id: str) -> dict[str, Any]:
         try:
-            return _manager().task_snapshot(task_id)
+            return projected_task_snapshot_with_execution_store_fallback(_manager(), task_id)
         except KeyError as exc:
             raise HTTPException(status_code=404, detail=f"Task not found: {task_id}") from exc
+
+    @app.get("/api/execution-store/workflows", tags=["execution-store"])
+    def execution_store_workflows(limit: int = Query(default=100, ge=1, le=1000)) -> dict[str, Any]:
+        return {
+            "ok": True,
+            "db_file": execution_store_db_file(),
+            "workflows": list_workflow_runs(limit=limit),
+        }
+
+    @app.get("/api/execution-store/workflows/{workflow_id}", tags=["execution-store"])
+    def execution_store_workflow(workflow_id: str) -> dict[str, Any]:
+        task = load_workflow_task_snapshot(workflow_id)
+        if not task:
+            raise HTTPException(status_code=404, detail=f"Workflow not found in execution store: {workflow_id}")
+        return {
+            "ok": True,
+            "db_file": execution_store_db_file(),
+            "workflow_id": workflow_id,
+            "task": task,
+        }
 
     @app.post("/api/tasks/{task_id}/export-markdown", tags=["tasks"])
     def export_markdown(
@@ -194,7 +231,7 @@ def create_app(config: SandboxApiConfig | None = None) -> FastAPI:
         payload: MarkdownExportRequest | None = Body(default=None),
     ) -> dict[str, Any]:
         try:
-            task = _manager().task_snapshot(task_id)
+            task = task_snapshot_with_execution_store_fallback(_manager(), task_id)
             return export_task_markdown(
                 task,
                 output_dir=(payload.output_dir if payload else None),
@@ -204,6 +241,27 @@ def create_app(config: SandboxApiConfig | None = None) -> FastAPI:
             raise HTTPException(status_code=404, detail=f"Task not found: {task_id}") from exc
         except FileNotFoundError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.post("/api/tasks/{task_id}/export-replay", tags=["tasks"])
+    def export_replay(
+        task_id: str,
+        payload: ReplayExportRequest | None = Body(default=None),
+    ) -> dict[str, Any]:
+        try:
+            task = task_snapshot_with_execution_store_fallback(_manager(), task_id)
+            return export_task_replay(
+                task,
+                output_dir=(payload.output_dir if payload else None),
+                frame_duration_ms=(payload.frame_duration_ms if payload else 900),
+            )
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=f"Task not found: {task_id}") from exc
+        except FileNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except ReplayExportError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
         except Exception as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -386,6 +444,56 @@ def _flatten_graph_payloads(items: list[dict[str, Any]]) -> list[dict[str, Any]]
         elif isinstance(item, dict):
             graphs.append(item)
     return graphs
+
+
+def task_snapshot_with_execution_store_fallback(manager: Any, task_id: str) -> dict[str, Any]:
+    """Read a task with Execution Store as primary, refreshing from live if possible."""
+
+    live_task: dict[str, Any] | None = None
+    try:
+        live_task = manager.task_snapshot(task_id)
+        refresh_execution_store_from_live_tasks(
+            [live_task],
+            source="live_task_detail_refresh",
+        )
+    except KeyError:
+        pass
+    except Exception:
+        pass
+
+    task = load_workflow_task_snapshot(task_id)
+    if task:
+        return task
+    if live_task:
+        return live_task
+    raise KeyError(task_id)
+
+
+def projected_task_snapshot_with_execution_store_fallback(manager: Any, task_id: str) -> dict[str, Any]:
+    """Read a task snapshot and return the public task-detail projection."""
+
+    task = task_snapshot_with_execution_store_fallback(manager, task_id)
+    return _task_detail_for_api(task)
+
+
+def task_list_snapshot_with_execution_store_merge(manager: Any) -> dict[str, Any]:
+    """Return dashboard task rows from live manager plus persisted store rows."""
+
+    try:
+        snapshot = manager.snapshot()
+    except Exception as exc:
+        runtime_info = (
+            manager.runtime_info()
+            if hasattr(manager, "runtime_info")
+            else {"runtime_status": "unavailable"}
+        )
+        snapshot = {
+            "runtime_status": runtime_info.get("runtime_status", "unavailable"),
+            "error": str(exc),
+            "temporal": runtime_info.get("temporal"),
+            "tasks": [],
+        }
+    return snapshot_with_execution_store_tasks(snapshot)
 
 
 def _config_from_env() -> SandboxApiConfig:

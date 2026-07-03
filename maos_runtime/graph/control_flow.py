@@ -216,6 +216,15 @@ def _node_backend_for_display(node: dict[str, Any]) -> str:
         return "codex"
     if normalized in {"claude", "claude-cli", "direct-claude", "claude-direct"}:
         return "claude"
+    if normalized in {
+        "claude-huawei",
+        "claude-huawei-cli",
+        "huawei-claude",
+        "huawei-deepseek",
+        "deepseek-huawei",
+        "deepseek-v3.2",
+    }:
+        return "claude-huawei"
     return normalized
 
 

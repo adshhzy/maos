@@ -1,4 +1,4 @@
-<!doctype html>
+﻿<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8" />
@@ -737,6 +737,60 @@
       font-weight: 780;
       white-space: nowrap;
     }
+    .eval-test-matrix {
+      min-width: 760px;
+      table-layout: fixed;
+    }
+    .eval-test-matrix th:first-child,
+    .eval-test-matrix td:first-child {
+      width: 128px;
+      text-align: left;
+    }
+    .eval-test-matrix th:not(:first-child),
+    .eval-test-matrix td:not(:first-child) {
+      text-align: center;
+      vertical-align: middle;
+    }
+    .eval-test-matrix th:not(:first-child) {
+      max-width: 128px;
+      white-space: normal;
+      overflow-wrap: anywhere;
+      line-height: 1.25;
+    }
+    .eval-status {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 56px;
+      min-height: 22px;
+      padding: 2px 7px;
+      border-radius: 999px;
+      border: 1px solid #cfdcd8;
+      font-size: 11px;
+      font-weight: 820;
+      letter-spacing: 0;
+      background: #f6f8f7;
+      color: #40524c;
+    }
+    .eval-status.passed {
+      border-color: #9fd3bd;
+      background: #eaf7f1;
+      color: #17654c;
+    }
+    .eval-status.failed,
+    .eval-status.error,
+    .eval-status.timeout {
+      border-color: #e0aaa7;
+      background: #fff0ee;
+      color: #9f2f2f;
+    }
+    .eval-status.skipped,
+    .eval-status.not-run,
+    .eval-status.unknown {
+      border-color: #d6d6c8;
+      background: #faf9ef;
+      color: #6d6645;
+    }
     .eval-command-list {
       display: grid;
       gap: 8px;
@@ -994,6 +1048,11 @@
         <button id="exportMarkdownButton">Export Markdown</button>
         <div id="markdownExportStatus" class="export-status">Select a completed task or node to export its final output.</div>
       </div>
+      <div class="export-toolbar replay-toolbar">
+        <input id="replayExportDir" type="text" placeholder="Replay GIF directory, blank = Desktop\\MAOS-replays" />
+        <button id="exportReplayButton">Export Replay GIF</button>
+        <div id="replayExportStatus" class="export-status">Select a completed task to generate a replay animation.</div>
+      </div>
       <div class="detail final-output-panel main-final-output" id="agentFinalOutput">Select a Multica, Hermes, Codex, or Claude node to inspect the complete final Agent output.</div>
     </main>
     <aside>
@@ -1027,8 +1086,11 @@
     const runButton = document.getElementById("runButton");
     const refreshButton = document.getElementById("refreshButton");
     const exportMarkdownButton = document.getElementById("exportMarkdownButton");
+    const exportReplayButton = document.getElementById("exportReplayButton");
     const markdownExportDir = document.getElementById("markdownExportDir");
+    const replayExportDir = document.getElementById("replayExportDir");
     const markdownExportStatus = document.getElementById("markdownExportStatus");
+    const replayExportStatus = document.getElementById("replayExportStatus");
     const tabsEl = document.getElementById("tabs");
     const taskBoardBody = document.getElementById("taskBoardBody");
     let loadedGraphs = [];
@@ -1048,9 +1110,14 @@
     runButton.addEventListener("click", runBatch);
     refreshButton.addEventListener("click", refresh);
     exportMarkdownButton.addEventListener("click", exportActiveMarkdown);
+    exportReplayButton.addEventListener("click", exportActiveReplay);
     markdownExportDir.value = localStorage.getItem("maosMarkdownExportDir") || "";
+    replayExportDir.value = localStorage.getItem("maosReplayExportDir") || "";
     markdownExportDir.addEventListener("change", () => {
       localStorage.setItem("maosMarkdownExportDir", markdownExportDir.value.trim());
+    });
+    replayExportDir.addEventListener("change", () => {
+      localStorage.setItem("maosReplayExportDir", replayExportDir.value.trim());
     });
 
     async function loadExamples() {
@@ -1184,23 +1251,72 @@
       }
     }
 
+    async function exportActiveReplay() {
+      const task = tasks.find(item => item.task_id === activeTaskId);
+      if (!task) {
+        setReplayStatus("Select a completed task before exporting replay GIF.", "error");
+        return;
+      }
+      if (!isCompletedTask(task)) {
+        setReplayStatus("Replay GIF can only be generated after the workflow finishes.", "error");
+        return;
+      }
+      const outputDir = replayExportDir.value.trim();
+      if (outputDir) localStorage.setItem("maosReplayExportDir", outputDir);
+      exportReplayButton.disabled = true;
+      setReplayStatus("Generating replay frames and GIF...", "");
+      try {
+        const response = await fetch(`/api/tasks/${encodeURIComponent(task.task_id)}/export-replay`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            output_dir: outputDir || null,
+            frame_duration_ms: 900,
+          }),
+        });
+        const data = await response.json();
+        if (!response.ok || !data.ok) throw new Error(data.detail || data.error || "Replay export failed");
+        setReplayStatus(`Saved ${data.frame_count || 0} frames to ${data.gif_path}`, "success");
+      } catch (error) {
+        setReplayStatus(String(error), "error");
+      } finally {
+        updateExportControls();
+      }
+    }
+
     function setExportStatus(message, kind) {
       markdownExportStatus.textContent = message;
       markdownExportStatus.className = `export-status${kind ? ` ${kind}` : ""}`;
+    }
+
+    function setReplayStatus(message, kind) {
+      replayExportStatus.textContent = message;
+      replayExportStatus.className = `export-status${kind ? ` ${kind}` : ""}`;
     }
 
     function updateExportControls() {
       const task = tasks.find(item => item.task_id === activeTaskId);
       const hasTask = Boolean(task);
       exportMarkdownButton.disabled = !hasTask;
+      exportReplayButton.disabled = !hasTask || !isCompletedTask(task);
       if (!hasTask) {
         setExportStatus("Select a completed task or node to export its final output.", "");
+        setReplayStatus("Select a completed task to generate a replay animation.", "");
         return;
       }
       const selectedText = selectedNodeId
         ? `Selected node: ${selectedNodeId}.`
         : "No node selected; the final output node will be detected automatically.";
       setExportStatus(`${selectedText} Markdown will be written by the sandbox API service.`, "");
+      if (isCompletedTask(task)) {
+        setReplayStatus("Replay GIF will reconstruct state changes from archived node instance history.", "");
+      } else {
+        setReplayStatus(`Workflow is ${task.status}; replay GIF is available after it completes successfully.`, "");
+      }
+    }
+
+    function isCompletedTask(task) {
+      return Boolean(task && String(task.status || "").toLowerCase() === "completed");
     }
 
     async function refresh() {
@@ -1261,7 +1377,7 @@
           <tr class="${activeClass}" data-task-id="${escapeHtml(task.task_id)}">
             <td>
               <strong>${escapeHtml(task.graph_name)}</strong>
-              <div class="muted">${escapeHtml(task.graph_id)} · ${detail.done}/${detail.total} nodes</div>
+              <div class="muted">${escapeHtml(task.graph_id)} 路 ${detail.done}/${detail.total} nodes</div>
             </td>
             <td>
               <span class="status-chip"><span class="status-dot dot-${escapeHtml(task.status)}"></span>${escapeHtml(task.status)}</span>
@@ -1307,6 +1423,50 @@
       if (!selectedNodeId && nodes.length === 1) {
         selectedNodeId = nodes[0].id;
       }
+      if (!selectedNodeId && task && task.status === "completed") {
+        selectedNodeId = detectFinalOutputNode(task);
+      }
+    }
+
+    function detectFinalOutputNode(task) {
+      const state = task.state || {};
+      const nodes = state.nodes || [];
+      if (!nodes.length) return null;
+      const outgoingTaken = {};
+      for (const edge of state.edges || []) {
+        if (Number(edge.taken_count || 0) > 0) {
+          outgoingTaken[edge.from] = (outgoingTaken[edge.from] || 0) + Number(edge.taken_count || 0);
+        }
+      }
+      const candidates = nodes.filter(node =>
+        node.status === "completed"
+        && !outgoingTaken[node.id]
+        && hasRenderableNodeOutput(task, node)
+      );
+      if (candidates.length) return candidates[candidates.length - 1].id;
+
+      const completedWithOutput = nodes.filter(node =>
+        node.status === "completed" && hasRenderableNodeOutput(task, node)
+      );
+      if (completedWithOutput.length) return completedWithOutput[completedWithOutput.length - 1].id;
+      return null;
+    }
+
+    function hasRenderableNodeOutput(task, node) {
+      if (!node) return false;
+      if (node.output_available || Number(node.output_chars || 0) > 0) return true;
+      const result = ((((task || {}).result || {}).results || {})[node.id])
+        || ((((task || {}).state || {}).results || {})[node.id]);
+      if (localRuntimeOutput(result)) return true;
+      const instanceResults = {
+        ...((((task || {}).result || {}).instance_results) || {}),
+        ...((((task || {}).state || {}).instance_results) || {}),
+      };
+      if (node.current_instance_id && localRuntimeOutput(instanceResults[node.current_instance_id])) return true;
+      for (const instance of Array.isArray(node.instances) ? node.instances : []) {
+        if (localRuntimeOutput(instanceResults[instance.id])) return true;
+      }
+      return false;
     }
 
     function summarizeAllTasks(taskList) {
@@ -1357,8 +1517,8 @@
 
     function renderNodeStateBreakdown(detail) {
       return `
-        <div>DONE ${detail.completed} · RUN ${detail.running} · SLEEP ${detail.suspended}</div>
-        <div class="muted">HUMAN ${detail.waiting_human} · WAIT ${detail.pending} · FAIL ${detail.failed}</div>
+        <div>DONE ${detail.completed} 路 RUN ${detail.running} 路 SLEEP ${detail.suspended}</div>
+        <div class="muted">HUMAN ${detail.waiting_human} 路 WAIT ${detail.pending} 路 FAIL ${detail.failed}</div>
       `;
     }
 
@@ -1369,7 +1529,7 @@
       return detail.activeActivities.map(node => `
         <div class="activity-line">
           <span class="status-dot dot-${escapeHtml(node.status)}"></span>
-          ${escapeHtml(node.id)} · ${escapeHtml(node.agent_name || "agent")} · ${escapeHtml(node.a2a_state || node.status)} · ${formatSeconds(node.elapsed_seconds || 0)}/${formatSeconds(node.planned_duration_seconds || 0)}
+          ${escapeHtml(node.id)} 路 ${escapeHtml(node.agent_name || "agent")} 路 ${escapeHtml(node.a2a_state || node.status)} 路 ${formatSeconds(node.elapsed_seconds || 0)}/${formatSeconds(node.planned_duration_seconds || 0)}
         </div>
       `).join("");
     }
@@ -1897,7 +2057,7 @@
           <div class="human-card-head">
             <div>
               <div class="human-title">${escapeHtml(item.node_label || item.node_id || item.id)}</div>
-              <div class="human-meta">${escapeHtml(item.type || "human")} · ${escapeHtml(item.status || "-")} · ${escapeHtml(item.intervention_id || item.id)}</div>
+              <div class="human-meta">${escapeHtml(item.type || "human")} 路 ${escapeHtml(item.status || "-")} 路 ${escapeHtml(item.intervention_id || item.id)}</div>
             </div>
             <span class="status-chip"><span class="status-dot dot-${escapeHtml(item.status === "pending" ? "waiting_human" : "completed")}"></span>${escapeHtml(item.status || "-")}</span>
           </div>
@@ -2063,7 +2223,7 @@
       const payloadHtml = result
         ? `<details class="visit-payload"><summary>Visit payload</summary><pre>${escapeHtml(safeStringify(result))}</pre></details>`
         : `<div class="visit-meta">Payload is not available yet. For completed workflows, older visit payloads are also in Workflow Result -> instance_results.</div>`;
-      const localRuntimeId = backend === "claude"
+      const localRuntimeId = (backend === "claude" || backend === "claude-huawei")
         ? (instance.claude_task_id || (result || {}).claude_task_id || "")
         : backend === "codex"
           ? (instance.codex_task_id || (result || {}).codex_task_id || instance.a2a_task_id || "")
@@ -2073,15 +2233,15 @@
       let inspectButton = "";
       if (["multica", "hermes"].includes(backend) && agentTaskId) {
         inspectButton = `<button class="visit-button" type="button" data-agent-task-id="${escapeHtml(agentTaskId)}" data-visit-id="${escapeHtml(instance.id)}">Inspect visit</button>`;
-      } else if (["claude", "codex", "evaluator"].includes(backend) && localRuntimeId) {
+      } else if (["claude", "claude-huawei", "codex", "evaluator"].includes(backend) && localRuntimeId) {
         inspectButton = `<button class="visit-button" type="button" data-local-backend="${escapeHtml(backend)}" data-local-runtime-id="${escapeHtml(localRuntimeId)}">Inspect visit</button>`;
       }
       return `
         <div class="visit-card${active}">
           <div class="visit-head">
             <div>
-              <div class="visit-title">${escapeHtml(instance.id || "-")} · visit ${escapeHtml(instance.visit || "-")}</div>
-              <div class="visit-meta">${escapeHtml(instance.status || "-")} · ${escapeHtml(instance.kind || "agent")} · ${escapeHtml(backend || "-")} · elapsed ${escapeHtml(elapsed)}</div>
+              <div class="visit-title">${escapeHtml(instance.id || "-")} 路 visit ${escapeHtml(instance.visit || "-")}</div>
+              <div class="visit-meta">${escapeHtml(instance.status || "-")} 路 ${escapeHtml(instance.kind || "agent")} 路 ${escapeHtml(backend || "-")} 路 elapsed ${escapeHtml(elapsed)}</div>
             </div>
             <span class="trace-badge">${escapeHtml(instance.agent_status || instance.status || "-")}</span>
           </div>
@@ -2118,16 +2278,22 @@
       const token = ++traceRequestToken;
       const normalizedBackend = String(backend || "").toLowerCase();
       const info = {
-        label: normalizedBackend === "codex" ? "Codex" : normalizedBackend === "evaluator" ? "Evaluator" : "Claude",
+        label: normalizedBackend === "codex"
+          ? "Codex"
+          : normalizedBackend === "evaluator"
+            ? "Evaluator"
+            : normalizedBackend === "claude-huawei"
+              ? "Claude Huawei DeepSeek"
+              : "Claude",
         runtimeId,
       };
-      updateLocalRuntimeInput(info, normalizedBackend, token);
-      updateLocalRuntimeOutput(info, normalizedBackend, token, null);
       document.getElementById("agentTrace").innerHTML = renderLocalRuntimeTrace(
         { status: "completed", heartbeat_count: 0, elapsed_seconds: 0 },
         null,
         normalizedBackend
       );
+      updateLocalRuntimeInput(info, normalizedBackend, token);
+      updateLocalRuntimeOutput(info, normalizedBackend, token, null);
     }
 
     async function selectVisitAgentTask(taskId, visitId) {
@@ -2215,11 +2381,11 @@
     }
 
     function isLocalRuntimeBackend(backend) {
-      return ["hermes", "codex", "claude"].includes(String(backend || "").toLowerCase());
+      return ["hermes", "codex", "claude", "claude-huawei"].includes(String(backend || "").toLowerCase());
     }
 
     function isAlwaysLocalRuntimeBackend(backend) {
-      return ["codex", "claude"].includes(String(backend || "").toLowerCase());
+      return ["codex", "claude", "claude-huawei"].includes(String(backend || "").toLowerCase());
     }
 
     function localBackendName(node, result) {
@@ -2242,9 +2408,9 @@
           workdir: node.codex_workdir || (result || {}).codex_workdir || ((result || {}).payload || {}).codex_workdir,
         };
       }
-      if (normalized === "claude") {
+      if (normalized === "claude" || normalized === "claude-huawei") {
         return {
-          label: "Claude",
+          label: normalized === "claude-huawei" ? "Claude Huawei DeepSeek" : "Claude",
           runtimeId: (result && (result.claude_task_id || ((result.payload || {}).claude_task_id))) || node.claude_task_id || node.a2a_task_id,
           command: node.claude_command || (result || {}).claude_command || ((result || {}).payload || {}).claude_command,
           workdir: node.claude_workdir || (result || {}).claude_workdir || ((result || {}).payload || {}).claude_workdir,
@@ -2271,9 +2437,9 @@
       const outputEl = document.getElementById("agentFinalOutput");
       const traceEl = document.getElementById("agentTrace");
       const info = localRuntimeInfo(node, result, backend);
+      traceEl.innerHTML = renderLocalRuntimeTrace(node, result, backend);
       updateLocalRuntimeInput(info, backend, token);
       updateLocalRuntimeOutput(info, backend, token, result);
-      traceEl.innerHTML = renderLocalRuntimeTrace(node, result, backend);
     }
 
     async function updateLocalRuntimeInput(info, backend, token) {
@@ -2337,6 +2503,7 @@
       const cachedOutput = outputCache.get(cacheKey);
       if (cachedOutput) {
         outputEl.innerHTML = renderLocalRuntimeOutput(cachedOutput, info);
+        renderLocalRuntimeTraceFromOutput(info, cachedOutput, fallbackResult);
         return;
       }
       outputEl.innerHTML = fallbackOutput
@@ -2358,10 +2525,27 @@
         if (token !== traceRequestToken) return;
         outputCache.set(cacheKey, data);
         outputEl.innerHTML = renderLocalRuntimeOutput(data, info);
+        renderLocalRuntimeTraceFromOutput(info, data, fallbackResult);
       } catch (error) {
         if (token !== traceRequestToken) return;
-        outputEl.innerHTML = `<div class="trace-error">Full ${escapeHtml(info.label)} output file could not be loaded: ${escapeHtml(String(error))}</div>`;
+        outputEl.innerHTML = fallbackOutput
+          ? `${renderFinalOutput(fallbackOutput)}<div class="trace-error">Full ${escapeHtml(info.label)} output file could not be loaded; showing archived workflow payload instead. ${escapeHtml(String(error))}</div>`
+          : `<div class="trace-error">Full ${escapeHtml(info.label)} output file could not be loaded: ${escapeHtml(String(error))}</div>`;
       }
+    }
+
+    function renderLocalRuntimeTraceFromOutput(info, data, fallbackResult) {
+      const trace = Array.isArray(data.trace) ? data.trace : [];
+      if (!trace.length) return;
+      document.getElementById("agentTrace").innerHTML = renderLocalRuntimeTraceEvents(
+        info,
+        trace,
+        {
+          status: (fallbackResult || {}).status || "completed",
+          heartbeat_count: (fallbackResult || {}).heartbeat_count || 0,
+          elapsed_seconds: (fallbackResult || {}).duration_seconds || (fallbackResult || {}).elapsed_seconds || 0,
+        }
+      );
     }
 
     function renderLocalRuntimeOutput(data, info) {
@@ -2416,6 +2600,10 @@
             ${renderEvalHiddenTests(single, multi)}
           </div>
           <div class="eval-section">
+            <h4>Hidden Test Matrix</h4>
+            ${renderEvalTestMatrix(report)}
+          </div>
+          <div class="eval-section">
             <h4>Extraction And Files</h4>
             ${renderEvalExtraction(single, multi)}
           </div>
@@ -2450,7 +2638,7 @@
             <tbody>
               <tr><td>Extract</td><td>${escapeHtml(rubric.extract)}</td><td>Can deterministically extract the required main implementation file.</td></tr>
               <tr><td>Compile</td><td>${escapeHtml(rubric.compile)}</td><td>The extracted maos_cache.py passes python -m py_compile.</td></tr>
-              <tr><td>Hidden tests</td><td>${escapeHtml(rubric.hidden_tests)}</td><td>Fixed evaluator-owned pytest cases: points = max points × passed / (passed + failed + errors).</td></tr>
+              <tr><td>Hidden tests</td><td>${escapeHtml(rubric.hidden_tests)}</td><td>Fixed evaluator-owned pytest cases: points = max points 脳 passed / (passed + failed + errors).</td></tr>
               <tr><td>Docs</td><td>${escapeHtml(rubric.docs)}</td><td>Presence of design notes and usage/example markers in the final output.</td></tr>
             </tbody>
           </table>
@@ -2652,6 +2840,126 @@
       `;
     }
 
+    function renderEvalTestMatrix(report) {
+      const matrix = evaluatorTestMatrix(report);
+      const tests = Array.isArray(matrix.tests) ? matrix.tests : [];
+      const rows = Array.isArray(matrix.rows) ? matrix.rows : [];
+      if (!tests.length || !rows.length) {
+        return `<div class="trace-empty">No per-test matrix is available for this evaluator report.</div>`;
+      }
+      const header = tests.map(test => {
+        const name = test && typeof test === "object" ? (test.name || "") : "";
+        const label = test && typeof test === "object" ? (test.display || test.name || "-") : "-";
+        return `<th title="${escapeHtml(name)}">${escapeHtml(label)}</th>`;
+      }).join("");
+      const body = rows.map(row => {
+        const statuses = row && typeof row === "object" && row.statuses && typeof row.statuses === "object"
+          ? row.statuses
+          : {};
+        const cells = tests.map(test => {
+          const name = test && typeof test === "object" ? String(test.name || "") : "";
+          const status = String(statuses[name] || "unknown");
+          return `<td><span class="eval-status ${escapeHtml(evalStatusClass(status))}" title="${escapeHtml(status)}">${escapeHtml(evalStatusLabel(status))}</span></td>`;
+        }).join("");
+        return `<tr><td>${escapeHtml(row.label || row.candidate || "-")}</td>${cells}</tr>`;
+      }).join("");
+      return `
+        <div class="eval-table-wrap">
+          <table class="eval-table eval-test-matrix">
+            <thead>
+              <tr>
+                <th>Candidate</th>
+                ${header}
+              </tr>
+            </thead>
+            <tbody>${body}</tbody>
+          </table>
+        </div>
+      `;
+    }
+
+    function evaluatorTestMatrix(report) {
+      const direct = report.test_matrix || report.testMatrix;
+      if (direct && typeof direct === "object") return direct;
+      return buildEvalTestMatrix(report.single || {}, report.multi || {});
+    }
+
+    function buildEvalTestMatrix(single, multi) {
+      const singleCases = evalCaseMap(single);
+      const multiCases = evalCaseMap(multi);
+      const names = [];
+      [singleCases, multiCases].forEach(caseMap => {
+        Object.keys(caseMap).forEach(name => {
+          if (!names.includes(name)) names.push(name);
+        });
+      });
+      return {
+        tests: names.map(name => ({
+          name,
+          display: singleCases[name]?.display || multiCases[name]?.display || compactTestName(name),
+        })),
+        rows: [
+          {
+            candidate: "single",
+            label: "Single Agent",
+            statuses: Object.fromEntries(names.map(name => [name, singleCases[name]?.status || "unknown"])),
+          },
+          {
+            candidate: "multi",
+            label: "Multi Agent",
+            statuses: Object.fromEntries(names.map(name => [name, multiCases[name]?.status || "unknown"])),
+          },
+        ],
+      };
+    }
+
+    function evalCaseMap(candidate) {
+      const cases = candidate.hidden_test_cases || candidate.hiddenTestCases;
+      if (!Array.isArray(cases)) return {};
+      const mapped = {};
+      cases.forEach(item => {
+        if (!item || typeof item !== "object" || !item.name) return;
+        const name = String(item.name);
+        mapped[name] = {
+          name,
+          display: String(item.display || compactTestName(name)),
+          status: String(item.status || "unknown"),
+        };
+      });
+      return mapped;
+    }
+
+    function compactTestName(name) {
+      return String(name || "")
+        .replace(/^test_/, "")
+        .replaceAll("async_ttl_cache", "async cache")
+        .replaceAll("aget_or_set", "aget/set")
+        .replaceAll("get_or_set", "get/set")
+        .replaceAll("_", " ")
+        .slice(0, 48);
+    }
+
+    function evalStatusLabel(status) {
+      const normalized = String(status || "").toLowerCase().replaceAll("_", "-");
+      return {
+        passed: "PASS",
+        failed: "FAIL",
+        error: "ERR",
+        timeout: "TIMEOUT",
+        skipped: "SKIP",
+        "not-run": "-",
+        unknown: "?",
+      }[normalized] || normalized.toUpperCase() || "?";
+    }
+
+    function evalStatusClass(status) {
+      const normalized = String(status || "").toLowerCase().replaceAll("_", "-");
+      if (["passed", "failed", "error", "timeout", "skipped", "not-run"].includes(normalized)) {
+        return normalized;
+      }
+      return "unknown";
+    }
+
     function renderEvalExtraction(single, multi) {
       const rows = [
         renderEvalExtractionRow("Single Agent", single),
@@ -2823,12 +3131,20 @@
     function renderLocalRuntimeTrace(node, result, backend) {
       const trace = (result && Array.isArray(result.trace)) ? result.trace : [];
       const info = localRuntimeInfo(node, result, backend);
+      return renderLocalRuntimeTraceEvents(info, trace, {
+        status: node.status || "-",
+        heartbeat_count: node.heartbeat_count || 0,
+        elapsed_seconds: node.elapsed_seconds || 0,
+      });
+    }
+
+    function renderLocalRuntimeTraceEvents(info, trace, meta) {
       const header = `
         <div class="trace-summary">
-          <div class="trace-card"><strong>${escapeHtml(node.status || "-")}</strong><span>Node status</span></div>
+          <div class="trace-card"><strong>${escapeHtml(meta.status || "-")}</strong><span>Node status</span></div>
           <div class="trace-card"><strong>${escapeHtml(trace.length)}</strong><span>Runtime events</span></div>
-          <div class="trace-card"><strong>${escapeHtml(node.heartbeat_count || 0)}</strong><span>Heartbeats</span></div>
-          <div class="trace-card"><strong>${escapeHtml(node.elapsed_seconds || 0)}s</strong><span>Elapsed</span></div>
+          <div class="trace-card"><strong>${escapeHtml(meta.heartbeat_count || 0)}</strong><span>Heartbeats</span></div>
+          <div class="trace-card"><strong>${escapeHtml(meta.elapsed_seconds || 0)}s</strong><span>Elapsed</span></div>
         </div>
         <div class="trace-meta">
           ${escapeHtml(info.label)} Task: ${escapeHtml(info.runtimeId || "-")}<br>
@@ -2839,18 +3155,40 @@
       if (!trace.length) {
         return `${header}<div class="trace-empty">${escapeHtml(info.label)} runtime events are not available yet.</div>`;
       }
-      return `${header}<div class="trace-list">${trace.map((event, index) => renderTraceStep({
-        kind: event.type || "runtime",
+      return `${header}<div class="trace-list">${trace.map((event, index) => renderTraceStep(localRuntimeTraceStep(event, index, info))).join("")}</div>`;
+    }
+
+    function localRuntimeTraceStep(event, index, info) {
+      const preview = localRuntimeTracePreview(event);
+      return {
+        kind: localRuntimeTraceKind(event.type || "runtime"),
         title: event.title || event.type || `${info.label} runtime event`,
         description: event.description || `Direct ${info.label} provider event.`,
         start_seq: index + 1,
         end_seq: index + 1,
         created_at: event.timestamp,
         time_to_next_seconds: event.duration_seconds,
-        preview: safeStringify(event),
-        chars: safeStringify(event).length,
-        approx_tokens: Math.ceil(safeStringify(event).length / 4),
-      })).join("")}</div>`;
+        preview,
+        chars: event.chars || preview.length,
+        approx_tokens: Math.ceil((event.chars || preview.length) / 4),
+        tool: event.tool,
+        status: event.subtype || event.terminal_reason,
+      };
+    }
+
+    function localRuntimeTraceKind(type) {
+      const normalized = String(type || "").replace(/^claude\./, "");
+      if (normalized === "tool_use" || normalized === "tool_result" || normalized === "text") return normalized;
+      if (normalized === "thinking") return "text";
+      return "message";
+    }
+
+    function localRuntimeTracePreview(event) {
+      if (!event || typeof event !== "object") return "";
+      if (event.preview != null) return String(event.preview);
+      if (event.result != null) return String(event.result);
+      if (event.usage && Object.keys(event.usage).length) return `Usage: ${safeStringify(event.usage)}`;
+      return "";
     }
 
     async function updateAgentInput(taskId, token) {
@@ -2969,7 +3307,7 @@
       }
       const readableSteps = timeline.length ? timeline : steps.map(step => ({
         title: step.tool ? `${step.type}: ${step.tool}` : step.type,
-        description: "原始 Agent trace 消息。",
+        description: "Raw Agent trace message.",
         start_seq: step.seq,
         end_seq: step.seq,
         created_at: step.created_at,
@@ -3156,12 +3494,12 @@
             <span class="trace-time">${escapeHtml(formatDateTime(step.created_at))}</span>
           </div>
           <div class="trace-step-title">
-            ${escapeHtml(step.title || "Agent 执行步骤")}
-            ${step.inferred_from_neighbor ? '<span class="trace-inference-badge">基于相邻步骤推断</span>' : ''}
+            ${escapeHtml(step.title || "Agent execution step")}
+            ${step.inferred_from_neighbor ? '<span class="trace-inference-badge">Inferred from adjacent steps</span>' : ''}
           </div>
-          <div class="trace-step-desc">${escapeHtml(step.description || "该步骤来自 Agent 执行轨迹。")}</div>
+          <div class="trace-step-desc">${escapeHtml(step.description || "This step comes from the Agent execution trace.")}</div>
           ${renderTraceDuration(step)}
-          <div class="trace-raw-label">原始记录</div>
+          <div class="trace-raw-label">Raw record</div>
           <pre class="trace-preview">${escapeHtml(step.preview || "")}</pre>
           <div class="trace-counts">${escapeHtml(step.chars || 0)} chars | ~${escapeHtml(step.approx_tokens || 0)} tokens${escapeHtml(status)}${escapeHtml(exitCode)}</div>
         </div>
@@ -3174,19 +3512,19 @@
       if (!Number.isFinite(seconds)) {
         return `
           <div class="trace-duration">
-            <span>前置等待 ${escapeHtml(wait)}</span>
+            <span>鍓嶇疆绛夊緟 ${escapeHtml(wait)}</span>
             <div class="duration-track"><div class="duration-bar" style="--duration-width: 0%"></div></div>
-            <span>下一步 -</span>
+            <span>涓嬩竴姝?-</span>
           </div>
         `;
       }
       const width = Math.max(4, Math.min(100, seconds / 120 * 100));
       const severity = step.duration_severity || (seconds >= 30 ? "slow" : seconds >= 10 ? "medium" : "normal");
       return `
-        <div class="trace-duration" title="当前步骤到下一条可观测事件的间隔">
-          <span>前置等待 ${escapeHtml(wait)}</span>
+        <div class="trace-duration" title="褰撳墠姝ラ鍒颁笅涓€鏉″彲瑙傛祴浜嬩欢鐨勯棿闅?>
+          <span>鍓嶇疆绛夊緟 ${escapeHtml(wait)}</span>
           <div class="duration-track"><div class="duration-bar ${escapeHtml(severity)}" style="--duration-width: ${escapeHtml(width.toFixed(1))}%"></div></div>
-          <span>下一步 ${escapeHtml(formatDuration(seconds))}</span>
+          <span>涓嬩竴姝?${escapeHtml(formatDuration(seconds))}</span>
         </div>
       `;
     }

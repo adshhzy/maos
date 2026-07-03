@@ -37,6 +37,9 @@ Optional:
 - `start_nodes`: list form of `start`.
 - `default_join`: `all`, `any`, `race`, or `first`.
 - `max_total_visits`: maximum total node executions across loops.
+- `execution_policy`: optional graph-level scheduling policy. Use
+  `{"mode": "serial", "max_concurrent_nodes": 1}` to run ready nodes one at a
+  time; omit it to keep the default parallel scheduling.
 - `edges`: explicit control-flow edges.
 
 If `edges` is omitted, dependencies are inferred from `node.deps` and the graph

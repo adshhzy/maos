@@ -1,6 +1,11 @@
 """A2A-compatible Agent runtime dispatch package."""
 
-from maos_runtime.a2a_provider_base import AgentRuntimeProvider, ProviderRuntime
+from maos_runtime.a2a_provider_base import (
+    AgentRuntimeProvider,
+    ProviderDriverResult,
+    ProviderRuntime,
+    ProviderTaskContext,
+)
 from maos_runtime.a2a.runtime import (
     cancel_task,
     complete_task_from_agent_callback,
@@ -19,7 +24,9 @@ from maos_runtime.a2a.runtime import (
 
 __all__ = [
     "AgentRuntimeProvider",
+    "ProviderDriverResult",
     "ProviderRuntime",
+    "ProviderTaskContext",
     "cancel_task",
     "complete_task_from_agent_callback",
     "extract_result_from_task",

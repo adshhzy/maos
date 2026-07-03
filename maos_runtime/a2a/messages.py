@@ -5,7 +5,7 @@ from __future__ import annotations
 import uuid
 from typing import Any
 
-from maos_runtime.a2a.artifact_store import load_artifact_content, store_dependency_artifact
+from maos_runtime.a2a.artifact_store import store_dependency_artifact
 from maos_runtime.a2a_constants import SIMULATOR_BACKEND
 
 
@@ -24,6 +24,13 @@ def _artifact_from_result(
         "metadata": {
             "nodeId": metadata["nodeId"],
             "operation": metadata["operation"],
+            "workflow_id": metadata.get("workflow_id"),
+            "workflowId": metadata.get("workflow_id"),
+            "a2aTaskId": metadata.get("a2aTaskId")
+            or metadata.get("claudeTaskId")
+            or metadata.get("codexTaskId")
+            or metadata.get("evaluationTaskId"),
+            "contextId": metadata.get("contextId"),
             "producedByAgent": metadata["agentCard"]["name"],
             "backend": metadata.get("backend", SIMULATOR_BACKEND),
             "simulatorJobId": metadata.get("simulatorJobId"),
@@ -40,6 +47,8 @@ def _dependency_artifacts_for_message(
     artifacts: list[dict[str, Any]],
     *,
     transfer_mode: str = "ref",
+    workflow_id: str | None = None,
+    consumer_node_id: str | None = None,
 ) -> list[dict[str, Any]]:
     """Return A2A artifacts for dependency transfer.
 
@@ -66,10 +75,16 @@ def _dependency_artifacts_for_message(
                 "sourceArtifactId": artifact.get("artifactId"),
             }
         else:
+            artifact_metadata = {
+                **(artifact.get("metadata") or {}),
+                "producer_workflow_id": _artifact_workflow_id(artifact) or workflow_id,
+                "consumer_workflow_id": workflow_id,
+                "consumer_node_id": consumer_node_id,
+            }
             ref = store_dependency_artifact(
                 compact_result,
                 source_artifact_id=artifact.get("artifactId"),
-                metadata=artifact.get("metadata") or {},
+                metadata=artifact_metadata,
             )
             data = _dependency_result_ref(compact_result, ref)
             metadata = {
@@ -80,6 +95,8 @@ def _dependency_artifacts_for_message(
                 "artifactRef": ref["artifact_ref"],
                 "artifactUri": ref["uri"],
                 "contentHash": ref["content_hash"],
+                "producerWorkflowId": artifact_metadata.get("producer_workflow_id"),
+                "consumerWorkflowId": workflow_id,
             }
 
         dependency_artifacts.append(
@@ -96,14 +113,28 @@ def _dependency_results_from_artifacts(
     artifacts: list[dict[str, Any]],
     *,
     resolve_refs: bool = False,
+    expected_workflow_id: str | None = None,
 ) -> dict[str, dict[str, Any]]:
     dependency_results: dict[str, dict[str, Any]] = {}
     for artifact in artifacts:
         if artifact.get("name") != "dag-node-result":
             continue
         result = _first_data_part({"parts": artifact.get("parts", [])})
+        if isinstance(result, dict) and "node" not in result:
+            node_id = (artifact.get("metadata") or {}).get("nodeId")
+            if node_id:
+                result = {
+                    "node": node_id,
+                    "operation": (artifact.get("metadata") or {}).get("operation"),
+                    "payload": result,
+                }
+        if not isinstance(result, dict) or "node" not in result:
+            continue
         if resolve_refs and _result_has_artifact_ref(result):
-            result = _resolve_dependency_result_ref(result)
+            result = _resolve_dependency_result_ref(
+                result,
+                expected_workflow_id=expected_workflow_id,
+            )
         dependency_results[result["node"]] = result
     return dependency_results
 
@@ -142,12 +173,29 @@ def _result_has_artifact_ref(result: dict[str, Any]) -> bool:
     return isinstance(payload, dict) and isinstance(payload.get("artifact_ref"), str)
 
 
-def _resolve_dependency_result_ref(result: dict[str, Any]) -> dict[str, Any]:
+def _resolve_dependency_result_ref(
+    result: dict[str, Any],
+    *,
+    expected_workflow_id: str | None = None,
+) -> dict[str, Any]:
     payload = result.get("payload") or {}
     try:
-        content = load_artifact_content(payload.get("artifact_ref"))
+        artifact = load_artifact_content_record(payload.get("artifact_ref"))
     except Exception:
         return result
+    if expected_workflow_id:
+        metadata = artifact.get("metadata") if isinstance(artifact, dict) else {}
+        producer_workflow_id = (
+            metadata.get("producer_workflow_id")
+            or metadata.get("workflow_id")
+            or metadata.get("workflowId")
+        )
+        consumer_workflow_id = metadata.get("consumer_workflow_id")
+        if producer_workflow_id and producer_workflow_id != expected_workflow_id:
+            return _scoped_ref_rejection(result, producer_workflow_id, expected_workflow_id)
+        if consumer_workflow_id and consumer_workflow_id != expected_workflow_id:
+            return _scoped_ref_rejection(result, consumer_workflow_id, expected_workflow_id)
+    content = artifact.get("content") if isinstance(artifact, dict) else None
     if not isinstance(content, dict):
         return result
     resolved = dict(content)
@@ -157,6 +205,34 @@ def _resolve_dependency_result_ref(result: dict[str, Any]) -> dict[str, Any]:
             if key in payload:
                 resolved_payload.setdefault(key, payload[key])
     return resolved
+
+
+def load_artifact_content_record(artifact_ref: str) -> dict[str, Any]:
+    from maos_runtime.a2a.artifact_store import load_artifact
+
+    return load_artifact(artifact_ref, include_content=True)
+
+
+def _scoped_ref_rejection(
+    result: dict[str, Any],
+    artifact_workflow_id: str,
+    expected_workflow_id: str,
+) -> dict[str, Any]:
+    rejected = dict(result)
+    payload = dict(rejected.get("payload") or {})
+    payload["artifact_scope_error"] = (
+        "artifact_ref belongs to a different workflow run and was not expanded"
+    )
+    payload["artifact_workflow_id"] = artifact_workflow_id
+    payload["expected_workflow_id"] = expected_workflow_id
+    rejected["payload"] = payload
+    return rejected
+
+
+def _artifact_workflow_id(artifact: dict[str, Any]) -> str | None:
+    metadata = artifact.get("metadata") if isinstance(artifact.get("metadata"), dict) else {}
+    value = metadata.get("workflow_id") or metadata.get("workflowId")
+    return str(value) if value else None
 
 
 def _compact_dependency_payload(payload: Any) -> Any:

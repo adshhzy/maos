@@ -18,6 +18,8 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
+from maos_runtime.persistence import persist_provider_task_record
+
 
 class PersistentTaskCache(dict[str, dict[str, Any]]):
     """Compatibility cache that mirrors direct task assignments to SQLite."""
@@ -305,6 +307,33 @@ def _upsert_provider_task(payload: dict[str, Any]) -> None:
             ),
         )
         conn.commit()
+    _project_provider_task_payload(payload, created_at)
+
+
+def _project_provider_task_payload(payload: dict[str, Any], created_at: Any) -> None:
+    try:
+        task = json.loads(payload.get("task_json") or "{}")
+    except Exception:
+        return
+    if not isinstance(task, dict):
+        return
+    record = {
+        "idempotency_key": payload.get("idempotency_key"),
+        "workflow_id": payload.get("workflow_id"),
+        "node_id": payload.get("node_id"),
+        "backend": payload.get("backend"),
+        "a2a_task_id": payload.get("provider_task_id"),
+        "status": payload.get("status"),
+        "created_at": created_at,
+        "updated_at": payload.get("updated_at"),
+        "finished_at": payload.get("finished_at"),
+        "result_artifact_created": bool(payload.get("result_artifact_created")),
+        "task": task,
+    }
+    try:
+        persist_provider_task_record(record)
+    except Exception:
+        return
 
 
 def _load_task_record_by_id(task_id: str) -> dict[str, Any] | None:
@@ -360,6 +389,7 @@ def _record_from_row(row: sqlite3.Row | None) -> dict[str, Any] | None:
         "status": row["status"],
         "created_at": row["created_at"],
         "updated_at": row["updated_at"],
+        "finished_at": row["finished_at"],
         "result_artifact_created": bool(row["result_artifact_created"]),
         "task": task,
     }

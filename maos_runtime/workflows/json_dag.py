@@ -58,6 +58,37 @@ from maos_runtime.workflows.state_builders import (
 
 
 DISPATCH_RETRY_POLICY = RetryPolicy(maximum_attempts=5)
+
+
+def _normalize_execution_policy(spec: dict[str, Any]) -> dict[str, Any]:
+    raw = spec.get("execution_policy") or spec.get("executionPolicy") or {}
+    if not isinstance(raw, dict):
+        raw = {"mode": str(raw)}
+    policy = dict(raw)
+    mode = str(policy.get("mode") or policy.get("node_scheduling") or "parallel").lower()
+    if mode in {"serial", "sequential", "single", "one_at_a_time"}:
+        policy["mode"] = "serial"
+        policy.setdefault("max_concurrent_nodes", 1)
+    else:
+        policy["mode"] = "parallel"
+    if "maxConcurrentNodes" in policy and "max_concurrent_nodes" not in policy:
+        policy["max_concurrent_nodes"] = policy["maxConcurrentNodes"]
+    return policy
+
+
+def _max_concurrent_nodes(policy: dict[str, Any]) -> int | None:
+    value = policy.get("max_concurrent_nodes")
+    if value is None and policy.get("mode") == "serial":
+        value = 1
+    if value is None:
+        return None
+    try:
+        max_concurrent = int(value)
+    except (TypeError, ValueError):
+        return None
+    return max(1, max_concurrent)
+
+
 @workflow.defn
 class JsonDagWorkflow:
     """Temporal workflow for JSON control-flow graphs.
@@ -82,6 +113,7 @@ class JsonDagWorkflow:
         self._all_results: dict[str, Any] = {}
         self._human_responses: dict[str, dict[str, Any]] = {}
         self._human_interventions: dict[str, dict[str, Any]] = {}
+        self._execution_policy: dict[str, Any] = {}
 
     @workflow.run
     async def run(self, graph: dict[str, Any]) -> dict[str, Any]:
@@ -111,6 +143,7 @@ class JsonDagWorkflow:
                 and node_id not in running
                 and self._node_is_ready(node_specs[node_id], arrivals[node_id], predecessor_ids)
             ]
+            ready_nodes = self._limit_ready_nodes_by_execution_policy(ready_nodes, running)
 
             if not ready_nodes and not running:
                 blocked_by_visit_limit = [
@@ -279,6 +312,7 @@ class JsonDagWorkflow:
             "graph_name": self._graph_name,
             "graph_type": self._graph_type,
             "workflow_status": self._workflow_status,
+            "execution_policy": self._execution_policy,
             "levels": self._levels,
             "edges": self._edges,
             "nodes": list(self._nodes.values()),
@@ -301,6 +335,7 @@ class JsonDagWorkflow:
         self._graph_id = spec["id"]
         self._graph_name = spec.get("name", spec["id"])
         self._graph_type = spec.get("graph_type", "control_flow")
+        self._execution_policy = _normalize_execution_policy(spec)
         self._levels = spec["levels"]
         self._edges = [build_edge_state(edge) for edge in spec["edges"]]
         self._visits = {node["id"]: 0 for node in spec["nodes"]}
@@ -330,6 +365,21 @@ class JsonDagWorkflow:
         if not required:
             return "__start__" in arrivals
         return required.issubset(set(arrivals))
+
+    def _limit_ready_nodes_by_execution_policy(
+        self,
+        ready_nodes: list[str],
+        running: dict[str, asyncio.Task],
+    ) -> list[str]:
+        if not ready_nodes:
+            return ready_nodes
+        max_concurrent = _max_concurrent_nodes(self._execution_policy)
+        if max_concurrent is None:
+            return ready_nodes
+        available_slots = max_concurrent - len(running)
+        if available_slots <= 0:
+            return []
+        return ready_nodes[:available_slots]
 
     def _dependency_executions_for_node(
         self,

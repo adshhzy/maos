@@ -12,7 +12,15 @@ from typing import Any
 from web.web_agent_api import build_agent_trace, build_local_runtime_output
 
 
-LOCAL_BACKENDS = {"claude", "claude-cli", "codex", "codex-cli", "evaluator"}
+LOCAL_BACKENDS = {
+    "claude",
+    "claude-cli",
+    "claude-huawei",
+    "claude-huawei-cli",
+    "codex",
+    "codex-cli",
+    "evaluator",
+}
 AGENT_SERVICE_BACKENDS = {"multica", "hermes"}
 
 
@@ -204,7 +212,7 @@ def _runtime_id(
     backend: str,
 ) -> str:
     payload = (result or {}).get("payload") if isinstance(result, dict) else {}
-    if backend in {"claude", "claude-cli"}:
+    if backend in {"claude", "claude-cli", "claude-huawei", "claude-huawei-cli"}:
         return str(
             node.get("claude_task_id")
             or (result or {}).get("claude_task_id")
@@ -310,6 +318,10 @@ def _rich_evaluator_markdown(
             "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|",
             _hidden_row("Single Agent", single),
             _hidden_row("Multi Agent", multi),
+            "",
+            "## Hidden Test Matrix",
+            "",
+            *_test_matrix_markdown(report, single, multi),
             "",
             "## Extraction And Files",
             "",
@@ -424,6 +436,135 @@ def _hidden_row(label: str, candidate: dict[str, Any]) -> str:
         f"{hidden.get('exit_code') if hidden.get('exit_code') is not None else '-'} | "
         f"{_fmt_number(hidden.get('duration_seconds'))}s | {_md_inline(summary)} |"
     )
+
+
+def _test_matrix_markdown(
+    report: dict[str, Any],
+    single: dict[str, Any],
+    multi: dict[str, Any],
+) -> list[str]:
+    matrix = report.get("test_matrix") or report.get("testMatrix")
+    if not isinstance(matrix, dict):
+        matrix = _build_test_matrix(single, multi)
+    tests = matrix.get("tests") if isinstance(matrix.get("tests"), list) else []
+    rows = matrix.get("rows") if isinstance(matrix.get("rows"), list) else []
+    if not tests or not rows:
+        return ["No per-test matrix is available for this evaluator report."]
+
+    header_cells = [
+        _md_cell(str(test.get("display") or test.get("name") or "-"))
+        for test in tests
+        if isinstance(test, dict)
+    ]
+    lines = [
+        "| Candidate | " + " | ".join(header_cells) + " |",
+        "|---|" + "|".join("---:" for _ in header_cells) + "|",
+    ]
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        statuses = row.get("statuses") if isinstance(row.get("statuses"), dict) else {}
+        cells = [
+            _status_mark(str(statuses.get(str(test.get("name") or ""), "unknown")))
+            for test in tests
+            if isinstance(test, dict)
+        ]
+        lines.append(
+            f"| {_md_cell(str(row.get('label') or row.get('candidate') or '-'))} | "
+            + " | ".join(cells)
+            + " |"
+        )
+    return lines
+
+
+def _build_test_matrix(
+    single: dict[str, Any],
+    multi: dict[str, Any],
+) -> dict[str, Any]:
+    single_cases = _case_map(single)
+    multi_cases = _case_map(multi)
+    names: list[str] = []
+    for cases in (single_cases, multi_cases):
+        for name in cases:
+            if name not in names:
+                names.append(name)
+    return {
+        "tests": [
+            {
+                "name": name,
+                "display": (
+                    single_cases.get(name, {}).get("display")
+                    or multi_cases.get(name, {}).get("display")
+                    or _compact_test_name(name)
+                ),
+            }
+            for name in names
+        ],
+        "rows": [
+            {
+                "candidate": "single",
+                "label": "Single Agent",
+                "statuses": {
+                    name: single_cases.get(name, {}).get("status", "unknown")
+                    for name in names
+                },
+            },
+            {
+                "candidate": "multi",
+                "label": "Multi Agent",
+                "statuses": {
+                    name: multi_cases.get(name, {}).get("status", "unknown")
+                    for name in names
+                },
+            },
+        ],
+    }
+
+
+def _case_map(candidate: dict[str, Any]) -> dict[str, dict[str, str]]:
+    cases = candidate.get("hidden_test_cases") or candidate.get("hiddenTestCases")
+    if not isinstance(cases, list):
+        return {}
+    mapped: dict[str, dict[str, str]] = {}
+    for item in cases:
+        if not isinstance(item, dict):
+            continue
+        name = str(item.get("name") or "")
+        if not name:
+            continue
+        mapped[name] = {
+            "name": name,
+            "display": str(item.get("display") or _compact_test_name(name)),
+            "status": str(item.get("status") or "unknown"),
+        }
+    return mapped
+
+
+def _compact_test_name(name: str) -> str:
+    text = str(name).removeprefix("test_")
+    text = text.replace("async_ttl_cache", "async cache")
+    text = text.replace("aget_or_set", "aget/set")
+    text = text.replace("get_or_set", "get/set")
+    text = text.replace("_", " ")
+    return text if len(text) <= 34 else text[:31].rstrip() + "..."
+
+
+def _status_mark(status: str) -> str:
+    normalized = status.lower().replace("_", "-")
+    return {
+        "passed": "PASS",
+        "failed": "FAIL",
+        "error": "ERR",
+        "timeout": "TIMEOUT",
+        "skipped": "SKIP",
+        "not-run": "-",
+        "not_run": "-",
+        "unknown": "?",
+    }.get(normalized, normalized.upper() or "?")
+
+
+def _md_cell(value: str) -> str:
+    return value.replace("|", "\\|").replace("\n", " ").strip()
 
 
 def _extraction_row(label: str, candidate: dict[str, Any]) -> str:

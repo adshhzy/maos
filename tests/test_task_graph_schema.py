@@ -77,6 +77,12 @@ class TaskGraphSchemaTests(unittest.TestCase):
             "claude",
         )
 
+    def test_claude_huawei_alias_displays_as_distinct_backend(self) -> None:
+        self.assertEqual(
+            _node_backend_for_display({"agent": {"backend": "huawei-deepseek"}}),
+            "claude-huawei",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

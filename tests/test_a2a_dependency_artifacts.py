@@ -38,7 +38,11 @@ class A2ADependencyArtifactTests(unittest.TestCase):
             }
         )
 
-        refs = _dependency_artifacts_for_message([artifact])
+        refs = _dependency_artifacts_for_message(
+            [artifact],
+            workflow_id="workflow-a",
+            consumer_node_id="downstream",
+        )
         payload = _dependency_results_from_artifacts(refs)["upstream"]["payload"]
 
         self.assertIn("artifact_ref", payload)
@@ -51,17 +55,65 @@ class A2ADependencyArtifactTests(unittest.TestCase):
         self.assertNotIn("stdout", payload)
         self.assertTrue(refs[0]["metadata"]["compactDependencyArtifact"])
         self.assertEqual(refs[0]["metadata"]["dependencyTransferMode"], "ref")
+        self.assertEqual(refs[0]["metadata"]["consumerWorkflowId"], "workflow-a")
 
     def test_dependency_artifact_refs_can_be_resolved_by_artifact_api_layer(self) -> None:
         long_output = "B" * 4000
-        artifact = _artifact_with_payload({"latest_comment": long_output, "status": "done"})
+        artifact = _artifact_with_payload(
+            {"latest_comment": long_output, "status": "done"},
+            workflow_id="workflow-a",
+        )
 
-        refs = _dependency_artifacts_for_message([artifact])
-        payload = _dependency_results_from_artifacts(refs, resolve_refs=True)["upstream"]["payload"]
+        refs = _dependency_artifacts_for_message([artifact], workflow_id="workflow-a")
+        payload = _dependency_results_from_artifacts(
+            refs,
+            resolve_refs=True,
+            expected_workflow_id="workflow-a",
+        )["upstream"]["payload"]
 
         self.assertEqual(payload["summary"], long_output)
         self.assertIn("artifact_ref", payload)
         self.assertIn("uri", payload)
+
+    def test_dependency_artifact_refs_are_scoped_by_workflow_run(self) -> None:
+        artifact_a = _artifact_with_payload(
+            {"latest_comment": "same output"},
+            workflow_id="workflow-a",
+        )
+        artifact_b = _artifact_with_payload(
+            {"latest_comment": "same output"},
+            workflow_id="workflow-b",
+        )
+
+        refs_a = _dependency_artifacts_for_message([artifact_a], workflow_id="workflow-a")
+        refs_b = _dependency_artifacts_for_message([artifact_b], workflow_id="workflow-b")
+
+        payload_a = refs_a[0]["parts"][0]["data"]["payload"]
+        payload_b = refs_b[0]["parts"][0]["data"]["payload"]
+        self.assertNotEqual(payload_a["artifact_ref"], payload_b["artifact_ref"])
+        self.assertEqual(payload_a["content_hash"], payload_b["content_hash"])
+
+    def test_dependency_artifact_ref_from_other_workflow_is_not_expanded(self) -> None:
+        long_output = "foreign output" * 500
+        artifact = _artifact_with_payload(
+            {"latest_comment": long_output},
+            workflow_id="workflow-a",
+        )
+
+        refs = _dependency_artifacts_for_message([artifact], workflow_id="workflow-a")
+        payload = _dependency_results_from_artifacts(
+            refs,
+            resolve_refs=True,
+            expected_workflow_id="workflow-b",
+        )["upstream"]["payload"]
+
+        self.assertNotEqual(payload.get("summary"), long_output)
+        self.assertEqual(
+            payload["artifact_scope_error"],
+            "artifact_ref belongs to a different workflow run and was not expanded",
+        )
+        self.assertEqual(payload["artifact_workflow_id"], "workflow-a")
+        self.assertEqual(payload["expected_workflow_id"], "workflow-b")
 
     def test_inline_mode_keeps_previous_compact_payload_shape(self) -> None:
         long_output = "C" * 4000
@@ -84,7 +136,10 @@ class A2ADependencyArtifactTests(unittest.TestCase):
         self.assertEqual(inline[0]["metadata"]["dependencyTransferMode"], "inline")
 
 
-def _artifact_with_payload(payload: dict) -> dict:
+def _artifact_with_payload(payload: dict, *, workflow_id: str | None = None) -> dict:
+    metadata = {"nodeId": "upstream"}
+    if workflow_id:
+        metadata["workflow_id"] = workflow_id
     return {
         "artifactId": "artifact-upstream",
         "name": "dag-node-result",
@@ -99,7 +154,7 @@ def _artifact_with_payload(payload: dict) -> dict:
                 },
             }
         ],
-        "metadata": {"nodeId": "upstream"},
+        "metadata": metadata,
     }
 
 
