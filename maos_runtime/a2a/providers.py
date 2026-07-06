@@ -25,7 +25,6 @@ class SimulatorProvider(ProviderRuntime):
     supports_cancel = True
     supports_resume = True
     supports_push_callbacks = True
-    uses_lifecycle_driver = True
 
     def agent_card(self, node: dict[str, Any]) -> dict[str, Any]:
         from maos_runtime.a2a.cards import _simulator_agent_card
@@ -62,27 +61,7 @@ class SimulatorProvider(ProviderRuntime):
         return _resume_simulator_task(task_id, request)
 
 
-class _RemoteAgentServiceProvider(ProviderRuntime):
-    """Shared lifecycle adapter for HTTP/remote Agent Service providers."""
-
-    uses_lifecycle_driver = True
-
-    def start_invocation(self, context: ProviderTaskContext) -> ProviderDriverResult:
-        return ProviderDriverResult.from_response(self._start_remote_invocation(context))
-
-    def inspect_invocation(self, context: ProviderTaskContext) -> ProviderDriverResult:
-        if not context.task_id:
-            raise ValueError(f"{self.backend} remote provider poll requires a task id.")
-        return ProviderDriverResult.from_response(self._inspect_remote_invocation(context))
-
-    def _start_remote_invocation(self, context: ProviderTaskContext) -> dict[str, Any]:
-        raise NotImplementedError(f"{self.backend} remote provider does not implement start.")
-
-    def _inspect_remote_invocation(self, context: ProviderTaskContext) -> dict[str, Any]:
-        raise NotImplementedError(f"{self.backend} remote provider does not implement inspect.")
-
-
-class MulticaProvider(_RemoteAgentServiceProvider):
+class MulticaProvider(ProviderRuntime):
     """Provider for real Multica-backed Agent tasks."""
 
     backend = MULTICA_BACKEND
@@ -94,15 +73,17 @@ class MulticaProvider(_RemoteAgentServiceProvider):
 
         return _multica_agent_card(node)
 
-    def _start_remote_invocation(self, context: ProviderTaskContext) -> dict[str, Any]:
+    def start_invocation(self, context: ProviderTaskContext) -> ProviderDriverResult:
         from maos_runtime.a2a.multica_backend import _send_multica_message
 
-        return _send_multica_message(context.request)
+        return ProviderDriverResult.from_response(_send_multica_message(context.request))
 
-    def _inspect_remote_invocation(self, context: ProviderTaskContext) -> dict[str, Any]:
+    def inspect_invocation(self, context: ProviderTaskContext) -> ProviderDriverResult:
         from maos_runtime.a2a.multica_backend import _poll_multica_task
 
-        return _poll_multica_task(context.task_id or "")
+        if not context.task_id:
+            raise ValueError("Multica provider poll requires a task id.")
+        return ProviderDriverResult.from_response(_poll_multica_task(context.task_id))
 
     def _cancel(self, task_id: str, request: dict[str, Any]) -> dict[str, Any]:
         return self.cancel_agent_service_task(task_id, request)
@@ -117,7 +98,7 @@ class MulticaProvider(_RemoteAgentServiceProvider):
         return _resume_multica_task(task_id, request)
 
 
-class HermesOneshotProvider(_RemoteAgentServiceProvider):
+class HermesOneshotProvider(ProviderRuntime):
     """Provider for direct one-shot Hermes runtime calls."""
 
     backend = HERMES_BACKEND
@@ -129,15 +110,17 @@ class HermesOneshotProvider(_RemoteAgentServiceProvider):
 
         return _hermes_agent_card(node)
 
-    def _start_remote_invocation(self, context: ProviderTaskContext) -> dict[str, Any]:
+    def start_invocation(self, context: ProviderTaskContext) -> ProviderDriverResult:
         from maos_runtime.a2a.hermes_backend import _send_hermes_message
 
-        return _send_hermes_message(context.request)
+        return ProviderDriverResult.from_response(_send_hermes_message(context.request))
 
-    def _inspect_remote_invocation(self, context: ProviderTaskContext) -> dict[str, Any]:
+    def inspect_invocation(self, context: ProviderTaskContext) -> ProviderDriverResult:
         from maos_runtime.a2a.hermes_backend import _poll_hermes_task
 
-        return _poll_hermes_task(context.task_id or "")
+        if not context.task_id:
+            raise ValueError("Hermes provider poll requires a task id.")
+        return ProviderDriverResult.from_response(_poll_hermes_task(context.task_id))
 
     def _cancel(self, task_id: str, request: dict[str, Any]) -> dict[str, Any]:
         return self.cancel_agent_service_task(task_id, request)
@@ -152,27 +135,7 @@ class HermesOneshotProvider(_RemoteAgentServiceProvider):
         return _resume_hermes_task(task_id, request)
 
 
-class _LocalCliProvider(ProviderRuntime):
-    """Shared lifecycle adapter for local CLI-backed providers."""
-
-    uses_lifecycle_driver = True
-
-    def start_invocation(self, context: ProviderTaskContext) -> ProviderDriverResult:
-        return ProviderDriverResult.from_response(self._start_cli_invocation(context))
-
-    def inspect_invocation(self, context: ProviderTaskContext) -> ProviderDriverResult:
-        if not context.task_id:
-            raise ValueError(f"{self.backend} CLI provider poll requires a task id.")
-        return ProviderDriverResult.from_response(self._inspect_cli_invocation(context))
-
-    def _start_cli_invocation(self, context: ProviderTaskContext) -> dict[str, Any]:
-        raise NotImplementedError(f"{self.backend} CLI provider does not implement start.")
-
-    def _inspect_cli_invocation(self, context: ProviderTaskContext) -> dict[str, Any]:
-        raise NotImplementedError(f"{self.backend} CLI provider does not implement inspect.")
-
-
-class CodexCliProvider(_LocalCliProvider):
+class CodexCliProvider(ProviderRuntime):
     """Provider for direct local Codex CLI one-shot calls."""
 
     backend = CODEX_BACKEND
@@ -183,15 +146,17 @@ class CodexCliProvider(_LocalCliProvider):
 
         return _codex_agent_card(node)
 
-    def _start_cli_invocation(self, context: ProviderTaskContext) -> dict[str, Any]:
+    def start_invocation(self, context: ProviderTaskContext) -> ProviderDriverResult:
         from maos_runtime.a2a.codex_backend import _send_codex_message
 
-        return _send_codex_message(context.request)
+        return ProviderDriverResult.from_response(_send_codex_message(context.request))
 
-    def _inspect_cli_invocation(self, context: ProviderTaskContext) -> dict[str, Any]:
+    def inspect_invocation(self, context: ProviderTaskContext) -> ProviderDriverResult:
         from maos_runtime.a2a.codex_backend import _poll_codex_task
 
-        return _poll_codex_task(context.task_id or "")
+        if not context.task_id:
+            raise ValueError("Codex CLI provider poll requires a task id.")
+        return ProviderDriverResult.from_response(_poll_codex_task(context.task_id))
 
     def _cancel(self, task_id: str, request: dict[str, Any]) -> dict[str, Any]:
         from maos_runtime.a2a.codex_backend import _cancel_codex_task
@@ -199,7 +164,7 @@ class CodexCliProvider(_LocalCliProvider):
         return _cancel_codex_task(task_id, request)
 
 
-class ClaudeCliProvider(_LocalCliProvider):
+class ClaudeCliProvider(ProviderRuntime):
     """Provider for direct local Claude CLI one-shot calls."""
 
     backend = CLAUDE_BACKEND
@@ -210,15 +175,17 @@ class ClaudeCliProvider(_LocalCliProvider):
 
         return _claude_agent_card(node)
 
-    def _start_cli_invocation(self, context: ProviderTaskContext) -> dict[str, Any]:
+    def start_invocation(self, context: ProviderTaskContext) -> ProviderDriverResult:
         from maos_runtime.a2a.claude_backend import _send_claude_message
 
-        return _send_claude_message(context.request)
+        return ProviderDriverResult.from_response(_send_claude_message(context.request))
 
-    def _inspect_cli_invocation(self, context: ProviderTaskContext) -> dict[str, Any]:
+    def inspect_invocation(self, context: ProviderTaskContext) -> ProviderDriverResult:
         from maos_runtime.a2a.claude_backend import _poll_claude_task
 
-        return _poll_claude_task(context.task_id or "")
+        if not context.task_id:
+            raise ValueError("Claude CLI provider poll requires a task id.")
+        return ProviderDriverResult.from_response(_poll_claude_task(context.task_id))
 
     def _cancel(self, task_id: str, request: dict[str, Any]) -> dict[str, Any]:
         from maos_runtime.a2a.claude_backend import _cancel_claude_task
@@ -236,17 +203,18 @@ class ClaudeHuaweiCliProvider(ClaudeCliProvider):
 
         return _claude_huawei_agent_card(node)
 
-    def _start_cli_invocation(self, context: ProviderTaskContext) -> dict[str, Any]:
+    def start_invocation(self, context: ProviderTaskContext) -> ProviderDriverResult:
         from maos_runtime.a2a.claude_backend import _send_claude_message
 
-        return _send_claude_message(context.request, backend=CLAUDE_HUAWEI_BACKEND)
+        return ProviderDriverResult.from_response(
+            _send_claude_message(context.request, backend=CLAUDE_HUAWEI_BACKEND)
+        )
 
 
 class EvaluatorProvider(ProviderRuntime):
     """Provider for deterministic local benchmark evaluation."""
 
     backend = EVALUATOR_BACKEND
-    uses_lifecycle_driver = True
 
     def agent_card(self, node: dict[str, Any]) -> dict[str, Any]:
         from maos_runtime.a2a.cards import _evaluator_agent_card

@@ -1,5 +1,7 @@
 # 持久化执行层与 Multica 的当前接口 API
 
+> 当前完整 API 参考见 [`api_reference.md`](api_reference.md)。本文档保留为 Multica 集成说明；稳定运行路径已切到 Agent Service API v1（`/api/v1/agent-tasks`），旧 `/tasks` 接口只作为 Multica 兼容与排障入口。
+
 本文档总结当前代码中“持久化执行层 / Persistent Execution Sandbox”与 Multica daemon / Agent Service 之间的实际接口。它描述的是当前实现，不是未来完整蓝图。
 
 ## 1. 模块边界
@@ -82,12 +84,12 @@ Client / Web
   -> Sandbox POST /api/tasks
   -> Temporal JsonDagWorkflow
   -> A2A runtime provider
-  -> Multica POST /tasks
+  -> Agent Service POST /api/v1/agent-tasks
   -> Temporal workflow durable polling
-  -> Multica GET /tasks/{task_id}
-  -> Multica GET /tasks/{task_id}/comments
-  -> Multica GET /tasks/{task_id}/runs
-  -> optional GET /runs/{run_id}/messages
+  -> Agent Service GET /api/v1/agent-tasks/{task_id}
+  -> optional legacy Multica GET /tasks/{task_id}/comments
+  -> optional legacy Multica GET /tasks/{task_id}/runs
+  -> optional legacy GET /runs/{run_id}/messages
   -> A2A artifact
   -> Temporal workflow signal / resume internally
   -> downstream nodes receive dependency_results
@@ -95,171 +97,155 @@ Client / Web
 
 当前完成唤醒不是由 Multica 主动回调完成，而是 Temporal workflow 周期性执行 polling activity。每次 poll 结束后 workflow 可以继续持久挂起，不持续占用 worker 线程。
 
-## 5. Sandbox 调用 Multica 的 API
+## 5. Sandbox 调用 Agent Service v1 的 API
 
-### 5.1 创建 Multica Task
+当前主路径是 Sandbox / Temporal provider 调用 Agent Service v1。Agent
+Service facade 内部可以继续适配 Multica 的 legacy `/tasks`、`comments`、
+`runs` 和 `messages` 数据模型，但 workflow/provider 不再直接依赖这些旧
+endpoint。
+
+### 5.1 创建或幂等复用 Agent Task
 
 ```http
-POST /tasks
+POST /api/v1/agent-tasks
 Content-Type: application/json
 ```
 
-当前请求体由持久化执行层生成，主要字段如下：
+请求体由持久化执行层生成，稳定字段如下：
 
 ```json
 {
-  "title": "MAOS Control-Flow Node Task: architecture_review",
-  "description": "节点任务说明、图输入、上游结果和执行约束",
-  "agent_key": "architect",
-  "agent_id": null,
-  "agent_name": "架构师 Agent",
-  "priority": "medium",
-  "status": "todo",
-  "project_id": null,
-  "parent_id": null,
-  "allow_duplicate": true,
+  "idempotency_key": "workflow:node#1:dispatch",
+  "agent": {
+    "backend": "multica",
+    "agent_key": "architect",
+    "agent_id": null,
+    "agent_name": "架构师 Agent"
+  },
+  "input": {
+    "title": "MAOS Control-Flow Node Task: architecture_review",
+    "instruction": "节点 prompt、图输入、上游结果摘要和执行约束",
+    "context": {
+      "graph_input": {},
+      "dependencies": {}
+    }
+  },
+  "runtime": {
+    "mode": "async",
+    "timeout_seconds": 86400,
+    "context_policy": "provided_context_only",
+    "runtime_profile": "codex",
+    "execution_mode": "multica",
+    "priority": "medium",
+    "status": "in_progress",
+    "allow_duplicate": true
+  },
+  "callback": {
+    "url": null,
+    "payload": {
+      "workflow_id": "workflow-id",
+      "node_id": "architecture_review",
+      "a2a_task_id": "a2a-task-..."
+    }
+  },
   "metadata": {
     "maos_task": true,
     "maos_backend": "multica",
     "workflow_id": "workflow-id",
     "node_id": "architecture_review",
-    "a2a_task_id": "a2a-task-...",
-    "idempotency_key": "...",
-    "context_id": "...",
-    "operation": "agent_task",
-    "execution_mode": "multica",
-    "runtime_profile": "codex",
-    "context_policy": "provided_context_only",
-    "comment_history_policy": "disabled",
-    "metadata_policy": "disabled",
-    "skill_loading_policy": "none",
-    "tool_policy": "no_external_tools",
-    "requested_agent_key": "architect",
-    "dispatch_agent_key": "architect",
-    "dependency_node_ids": "prepare_brief",
-    "dependency_result_bytes": 1234,
-    "graph_input_bytes": 567
+    "operation": "agent_task"
   }
 }
 ```
 
 说明：
 
-- `description` 是真实 Agent 看到的主要任务输入，包含节点 prompt、A2A context、上游结果摘要和执行规则。
-- `metadata` 用于标识这是 MAOS/Sandbox 派发的任务，并让 Multica runtime 进入更受控的启动模式。
-- 默认不把完整 `dependency_results_json` 和 `graph_input_json` 放进 metadata，除非节点显式开启 `include_payload_metadata`。这样做是为了减少 Multica 侧 token 膨胀。
-- 创建前会先通过 `GET /tasks?limit=200` 查找相同 `idempotency_key` 的历史任务，避免重复创建。
+- `input.instruction` 是真实 Agent 看到的主要任务输入。
+- `idempotency_key` 用于防止 Temporal activity retry 或服务恢复时重复创建
+  Agent task。
+- Agent Service 当前的 Multica facade 可能通过 legacy
+  `GET /tasks?limit=200` 扫描 `metadata.idempotency_key` 做兼容查重；这是实现
+  细节，不是持久化执行层对外的稳定 API。
+- 默认不把完整 `dependency_results_json` 和 `graph_input_json` 放进 metadata，
+  除非节点显式开启 `include_payload_metadata`。
 
-### 5.2 按 idempotency key 查重
+### 5.2 查询任务状态
 
 ```http
-GET /tasks?limit=200
+GET /api/v1/agent-tasks/{agent_task_id}
 ```
 
-持久化执行层会遍历返回任务，检查：
+返回稳定 projection：
 
 ```json
 {
-  "metadata": {
-    "idempotency_key": "..."
+  "api_version": "agent-service-v1",
+  "task_id": "agent-task-id",
+  "external_id": "multica-task-id",
+  "backend": "multica",
+  "status": "working",
+  "state": "TASK_STATE_WORKING",
+  "mode": "poll",
+  "poll_after_seconds": 30,
+  "progress": {
+    "phase": "working",
+    "message": "当前任务摘要",
+    "percent": null
+  },
+  "input_request": null,
+  "metadata": {},
+  "links": {
+    "self": "/api/v1/agent-tasks/agent-task-id",
+    "events": "/api/v1/agent-tasks/agent-task-id/events",
+    "artifacts": "/api/v1/agent-tasks/agent-task-id/artifacts"
   }
-}
-```
-
-若找到相同 idempotency key，则复用已有 Multica task，而不是再次 `POST /tasks`。
-
-### 5.3 查询任务状态
-
-```http
-GET /tasks/{multica_task_id}
-```
-
-当前主要读取字段：
-
-```json
-{
-  "id": "...",
-  "title": "...",
-  "status": "todo | in_progress | in_review | done | blocked | cancelled",
-  "metadata": {}
 }
 ```
 
 状态映射：
 
-| Multica status | Sandbox / A2A 处理 |
-|---|---|
-| `done` | 视为完成。 |
-| `in_review` | 视为完成。 |
-| `blocked` | 视为失败。 |
-| `cancelled` | 视为失败。 |
-| `canceled` | 视为失败。 |
-| 其他状态 | 视为仍在执行，继续轮询。 |
+| Agent Service status | A2A state | Sandbox 处理 |
+|---|---|---|
+| `accepted` | `TASK_STATE_WORKING` | 继续持久等待。 |
+| `working` | `TASK_STATE_WORKING` | 继续持久等待。 |
+| `input_required` | `TASK_STATE_INPUT_REQUIRED` | 创建 human intervention 并等待人工输入。 |
+| `completed` | `TASK_STATE_COMPLETED` | 提取结果并调度下游节点。 |
+| `failed` | `TASK_STATE_FAILED` | 标记节点失败。 |
+| `timed_out` | `TASK_STATE_FAILED` | 标记节点失败。 |
+| `cancelled` | `TASK_STATE_CANCELED` | 标记节点取消。 |
 
-### 5.4 读取最终输出评论
-
-```http
-GET /tasks/{multica_task_id}/comments?recent={n}
-```
-
-默认 `n = AGENT_SERVICE_RESULT_RECENT_COMMENTS`，当前为 `3`。
-
-持久化执行层从最近评论中提取最终输出：
-
-- 优先取最新评论文本。
-- 文本会按 `AGENT_SERVICE_RESULT_TEXT_LIMIT` 截断后写入节点结果的 `latest_comment`。
-- 如果评论文本中能解析出 JSON 对象，则写入 `structured_output`，并把其中的顶层字段提升到节点 payload 中。
-
-节点完成后的结果 payload 示例：
-
-```json
-{
-  "status": "done",
-  "agent_backend": "multica",
-  "agent_key": "architect",
-  "requested_agent_key": "architect",
-  "context_policy": "provided_context_only",
-  "runtime_profile": "codex",
-  "execution_mode": "multica",
-  "agent_id": null,
-  "agent_name": "架构师 Agent",
-  "agent_service_task_id": "multica-task-id",
-  "title": "MAOS Control-Flow Node Task: architecture_review",
-  "latest_comment": "Agent 最终输出文本",
-  "comments": [],
-  "runs": [],
-  "messages": [],
-  "structured_output": {
-    "decision": "approved",
-    "reason": "..."
-  }
-}
-```
-
-### 5.5 读取 run 列表
+### 5.3 读取事件和 Trace
 
 ```http
-GET /tasks/{multica_task_id}/runs
+GET /api/v1/agent-tasks/{agent_task_id}/events?since=0&poll_seconds=30
 ```
 
-用途：
+该接口返回 Agent task 的事件、心跳或 trace 流。Multica facade 内部可以把
+legacy runs/messages 转换为统一事件。Web UI 通常通过 Sandbox 的
+`GET /api/agent-trace?task_id={agent_task_id}` 查看整理后的中文步骤和耗时。
 
-- Web 看板展示 Agent 执行链路。
-- 完成节点时保存 compact run summary。
-- 找出最新 run，用于可选读取 messages。
-
-### 5.6 读取 run messages
+### 5.4 读取 Artifact
 
 ```http
-GET /runs/{run_id}/messages?issue_id={multica_task_id}
+GET /api/v1/agent-tasks/{agent_task_id}/artifacts
+GET /api/v1/agent-tasks/{agent_task_id}/artifacts/{artifact_id}
+GET /api/v1/agent-tasks/{agent_task_id}/artifacts/{artifact_id}/content
 ```
 
-用途：
+完成节点时，provider 会把 Agent Service projection、最终输出、trace 摘要和
+artifact 描述转换为 A2A `dag-node-result`，再写入 Sandbox 的 artifact store。
 
-- Web `Agent Trace` 面板展示更详细的执行链路。
-- 如果 `AGENT_SERVICE_FETCH_RUN_MESSAGES=true`，节点完成时也会把 compact messages 写入节点 payload。
+### 5.5 人工输入与取消
 
-默认不在节点结果中拉取 run messages，避免大结果进入 Temporal history。
+```http
+POST /api/v1/agent-tasks/{agent_task_id}/resume
+POST /api/v1/agent-tasks/{agent_task_id}/cancel
+```
+
+当 Agent Service 返回 `input_required` 时，Sandbox 会创建统一的人在回路
+intervention。人工响应提交到 Sandbox 后，workflow 再通过 `resume` 把响应传回
+原 Agent task。取消 workflow 或节点时，provider 可以通过 `cancel` 尝试取消外部
+Agent task。
 
 ## 6. Sandbox 暴露给 Multica / Agent 的 API
 
@@ -284,20 +270,22 @@ POST /api/v1/agent-events
 
 处理流程：
 
-1. `web_visualize.py` 接收请求。
+1. Sandbox API service 接收请求。
 2. `TemporalTaskService.handle_agent_callback()` 调用 `complete_task_from_agent_callback()`。
 3. 生成 A2A task event。
 4. 调用 Temporal workflow signal：`JsonDagWorkflow.agent_node_completed`。
 
 重要说明：
 
-- 当前 Multica 主路径没有使用该 push callback。
-- 当前 Multica 主路径是 durable polling：Sandbox 主动查 `GET /tasks/{id}`。
+- 当前 Multica 主路径没有依赖该 push callback。
+- 当前 Multica 主路径是 durable polling：Sandbox 主动查 `GET /api/v1/agent-tasks/{id}`。
 - 这个回调入口主要保留给 simulator、未来 Agent push event 或 A2A push 兼容。
 
-## 7. Web 看板直接读取 Multica 的 API
+## 7. Web 看板读取 Agent 调试信息的 API
 
-Web 服务为了展示真实 Agent 节点的输入、最终输出和 trace，会直接代理读取 Multica：
+Web 服务为了展示真实 Agent 节点的输入、最终输出和 trace，会调用 Sandbox API。
+Sandbox 再根据 provider task 信息读取 Agent Service v1、provider task store 或
+legacy Multica 调试数据。
 
 ### 7.1 Agent Trace
 
@@ -305,13 +293,12 @@ Web 服务为了展示真实 Agent 节点的输入、最终输出和 trace，会
 GET /api/agent-trace?task_id={multica_task_id}
 ```
 
-Sandbox 内部会调用：
+Multica provider 的调试实现可以读取：
 
 ```http
-GET /tasks/{task_id}
-GET /tasks/{task_id}/runs
-GET /tasks/{task_id}/comments?recent=20
-GET /runs/{latest_run_id}/messages?issue_id={task_id}
+GET /api/v1/agent-tasks/{task_id}
+GET /api/v1/agent-tasks/{task_id}/events
+GET /api/v1/agent-tasks/{task_id}/artifacts
 ```
 
 返回给前端的主要字段：
@@ -336,13 +323,14 @@ GET /runs/{latest_run_id}/messages?issue_id={task_id}
 GET /api/agent-input?task_id={multica_task_id}
 ```
 
-Sandbox 内部调用：
+Sandbox 内部读取 Agent Service v1 projection 或 provider task store：
 
 ```http
-GET /tasks/{task_id}
+GET /api/v1/agent-tasks/{task_id}
 ```
 
-并从 Multica task 的 `description`、`metadata` 等字段中提取启动 Agent 时注入的任务输入。
+并从 Agent Service projection、provider task store 或兼容 Multica task 的
+`description`、`metadata` 等字段中提取启动 Agent 时注入的任务输入。
 
 ## 8. A2A 数据传递方式
 
@@ -391,14 +379,13 @@ Multica 本身接收的是 Multica Task；持久化执行层内部将其包装�
 
 ### 完成
 
-当 `GET /tasks/{id}` 返回：
+当 `GET /api/v1/agent-tasks/{id}` 返回：
 
-- `status = done`
-- 或 `status = in_review`
+- `status = completed`
 
 持久化执行层会：
 
-1. 读取 comments、runs、可选 messages。
+1. 读取 projection、events、artifacts 或 provider task store 中的输出。
 2. 构造节点 result。
 3. 创建 `dag-node-result` artifact。
 4. 生成 completed event。
@@ -407,11 +394,11 @@ Multica 本身接收的是 Multica Task；持久化执行层内部将其包装�
 
 ### 失败
 
-当 `GET /tasks/{id}` 返回：
+当 `GET /api/v1/agent-tasks/{id}` 返回：
 
-- `status = blocked`
+- `status = failed`
+- `status = timed_out`
 - `status = cancelled`
-- `status = canceled`
 
 持久化执行层会：
 
@@ -425,28 +412,25 @@ Multica 本身接收的是 Multica Task；持久化执行层内部将其包装�
 当前 Multica 对接已经做了两层幂等：
 
 1. A2A task id 由节点 id 和 idempotency key 生成。
-2. 创建 Multica task 前调用 `GET /tasks?limit=200`，查找相同 `metadata.idempotency_key`。
+2. Agent Service v1 使用 `idempotency_key` 复用已有 Agent task；Multica facade 内部可以用 legacy `/tasks` 查询实现兼容查重。
 
-如果找到已有任务，则复用已有 Multica task，不再次创建。
+如果找到已有任务，则复用已有 Agent task，不再次创建。
 
 这个机制用于避免 Temporal activity retry 或服务重启恢复时反复创建新的 “MAOS Control-Flow Node Task”。
 
 ## 11. 当前限制
 
 - Multica 主路径仍是 polling，不是 Multica 主动 push event。
-- `GET /tasks?limit=200` 的查重是简化实现，任务很多时需要服务端索引或专门查询参数。
-- 节点结果中的 `latest_comment` 会被截断；完整原始输出应从 Multica comments 或未来 artifact store 获取。
-- 默认不抓取 run messages 到 workflow result，避免 Temporal history 过大。
+- Multica facade 的 legacy `/tasks` 查重是兼容实现，任务很多时需要服务端索引或专门查询参数。
 - Web trace 是展示用途，不是 workflow 调度所依赖的权威数据。
-- 当前没有调用 Multica cancel API；任务取消、节点取消还需要补齐。
-- 当前没有将大型 artifact 外置到对象存储，仍以 compact JSON 写入 workflow result。
+- cancel/resume 的实际效果取决于后端 Agent Service 是否支持真正取消或原生恢复。
+- 大型业务输出优先通过 Sandbox artifact store 外置；trace、runs、comments 等运行过程数据仍应避免完整写入 Temporal history。
 
 ## 12. 代码位置
 
 | 文件 | 作用 |
 |---|---|
-| `a2a_runtime.py` | Multica provider、创建任务、轮询状态、结果转换、A2A artifact。 |
-| `dag_workflow.py` | Temporal workflow 调度、持久等待、节点完成 signal、最终 workflow result。 |
-| `sandbox_runtime.py` | Sandbox 与 Temporal client 的桥接，处理 callback 并 signal workflow。 |
-| `web_visualize.py` | Web API、看板、Agent input/output/trace 展示，代理查询 Multica。 |
-
+| `maos_runtime.a2a` / `maos_runtime.a2a.providers` | Provider facade、Multica provider、创建任务、轮询状态、结果转换、A2A artifact。 |
+| `maos_runtime.workflows.json_dag` / `maos_runtime.workflows.activities` | Temporal workflow 调度、持久等待、节点完成 signal、最终 workflow result。 |
+| `maos_runtime.sandbox.service` / `services.sandbox_api_service` | Sandbox 与 Temporal client 的桥接，HTTP API、callback、human response 和 workflow signal。 |
+| `web.web_agent_api` / `web.web_ui_server` | Web 看板的 Agent input/output/trace 展示与 Sandbox API 代理。 |

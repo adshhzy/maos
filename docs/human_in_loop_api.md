@@ -1,10 +1,17 @@
 # Human-in-the-loop API
 
-This project treats human input as durable workflow state owned by Temporal.
-Sandbox API exposes the control-plane endpoints; Web UI and external clients call
-these HTTP APIs, and Sandbox API signals the target Temporal workflow.
+MAOS treats human input as durable workflow state owned by Temporal. The Sandbox
+API exposes HTTP control-plane endpoints for Web UI and external clients. The
+Sandbox API then signals the target Temporal workflow.
 
-## Graph node format
+Human input can enter the system in two ways:
+
+- A planned graph node with `type: "human"`.
+- A running Agent task reports `needs_input` / `input_required`.
+
+Both paths use the same intervention data model and the same response endpoint.
+
+## Planned Human Node
 
 Declare a planned human step with `type: "human"`:
 
@@ -12,24 +19,24 @@ Declare a planned human step with `type: "human"`:
 {
   "id": "human_release_approval",
   "type": "human",
-  "label": "人工发布审批",
+  "label": "Manual release approval",
   "operation": "approval",
   "deps": ["draft_release_plan"],
-  "prompt": "请审批是否允许进入灰度发布。",
+  "prompt": "Please decide whether this release may proceed.",
   "assignee_role": "release_owner",
   "schema": {
     "decision": ["approved", "needs_revision", "rejected"],
-    "comment": "审批意见"
+    "comment": "Approval comment"
   },
   "timeout_seconds": 86400
 }
 ```
 
 When the workflow reaches this node, it creates a human intervention, marks the
-node as `waiting_human`, and durably waits for a Temporal signal. Worker threads
-are not occupied while the workflow is waiting.
+node as `waiting_human`, and durably waits for a Temporal signal. No worker
+thread is occupied while the workflow is waiting.
 
-## List human interventions
+## List Human Interventions
 
 ```http
 GET /api/human-interventions?status=pending
@@ -47,14 +54,16 @@ Response:
       "workflow_id": "task-human-in-loop-release-approval-...",
       "node_id": "human_release_approval",
       "status": "pending",
-      "prompt": "请审批是否允许进入灰度发布。",
-      "schema": {"decision": ["approved", "needs_revision", "rejected"]}
+      "prompt": "Please decide whether this release may proceed.",
+      "schema": {
+        "decision": ["approved", "needs_revision", "rejected"]
+      }
     }
   ]
 }
 ```
 
-## Submit a human response
+## Submit Human Response
 
 ```http
 POST /api/tasks/{workflow_id}/human-interventions/{intervention_id}/responses
@@ -65,59 +74,60 @@ Content-Type: application/json
 {
   "responder": "operator",
   "decision": "approved",
-  "comment": "同意进入灰度发布，请保留人工兜底和回滚预案。",
+  "comment": "Approved with rollback guardrail.",
   "response": {
     "decision": "approved",
-    "comment": "同意进入灰度发布，请保留人工兜底和回滚预案。"
+    "comment": "Approved with rollback guardrail."
   }
 }
 ```
 
 Sandbox API sends `JsonDagWorkflow.human_intervention_resolved` to Temporal.
 The human node completes and produces a standard `dag-node-result` A2A artifact,
-so downstream Agent or Simulator nodes receive the human decision through
-`$deps.<human_node_id>`.
+so downstream Agent or Simulator nodes receive the human decision through normal
+dependency transfer.
 
-## Runtime state fields
+## Runtime State Fields
 
 Task state includes:
 
-- `state.human_interventions`: all human interventions in the workflow.
+- `state.human_interventions`: all interventions in the workflow.
 - `state.pending_human_interventions`: unresolved interventions only.
-- `node.status == "waiting_human"`: node is durably waiting for a human signal.
+- `node.status == "waiting_human"`: node is waiting for a human signal.
 - `node.human_interventions`: interventions attached to that node.
 
-Node result payload includes:
+Completed human node result payload:
 
 ```json
 {
   "status": "completed",
   "decision": "approved",
-  "comment": "...",
+  "comment": "Approved with rollback guardrail.",
   "responder": "operator",
-  "response": {"decision": "approved", "comment": "..."},
-  "human_interventions": [...]
+  "response": {
+    "decision": "approved",
+    "comment": "Approved with rollback guardrail."
+  },
+  "human_interventions": []
 }
 ```
 
-## Example
-
-See `examples/human_in_loop_release_approval.json`.
-
-## Agent runtime requests human input
+## Agent Runtime Requests Human Input
 
 An Agent runtime can request human input while an Agent node is still running.
 The workflow uses the same intervention store and the same
-`JsonDagWorkflow.human_intervention_resolved` signal as planned `type: "human"`
+`JsonDagWorkflow.human_intervention_resolved` Temporal signal as planned human
 nodes.
 
-Agent Service or Simulator reports the intermediate state through the existing
-callback endpoint:
+Agent Service or Simulator reports the intermediate state through:
 
 ```http
 POST /api/agent-callbacks
+POST /api/v1/agent-events
 Content-Type: application/json
 ```
+
+Example callback:
 
 ```json
 {
@@ -144,31 +154,29 @@ The workflow converts this into a pending human intervention with:
 - `human_request_id`
 - `a2a_task_id`
 
-The Web UI or any external client resolves it with the same human response API:
+The Web UI or any external client resolves it with:
 
 ```http
 POST /api/tasks/{workflow_id}/human-interventions/{intervention_id}/responses
 ```
 
 After the signal is received, the workflow resumes the original Agent task
-through the provider API:
+through the provider API. For Agent Service backed tasks, the stable HTTP
+endpoint is:
 
 ```http
-POST /tasks/{agent_task_id}/human-responses
+POST /api/v1/agent-tasks/{agent_task_id}/resume
 ```
 
-Simulator implements the equivalent local endpoint:
-
-```http
-POST /api/simulator/jobs/{job_id}/human-responses
-```
+Simulator-backed tasks use the simulator's local equivalent.
 
 An Agent node may request human input multiple times. Each request gets a stable
 intervention id derived from the node instance and `human_request.request_id`,
 and all resolved responses are preserved in `node.human_interventions`.
 
-Simulation example:
+## Examples
 
-```text
-examples/agent_runtime_human_intervention_simulator.json
-```
+- `examples/human_in_loop_release_approval.json`
+- `examples/agent_runtime_human_intervention_simulator.json`
+
+See `docs/api_reference.md` for the full API map.

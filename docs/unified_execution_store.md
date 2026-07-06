@@ -59,6 +59,8 @@ GET /api/execution-store/workflows
 GET /api/execution-store/workflows/{workflow_id}
 ```
 
+See `docs/api_reference.md` for the complete Sandbox API map.
+
 `/api/health` also returns the active execution store DB path.
 
 Primary Web/API reads now use the Execution Store:

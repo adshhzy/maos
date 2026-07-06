@@ -53,7 +53,7 @@ class ProviderApiV1Tests(unittest.TestCase):
         self.assertTrue(capabilities["providers"]["evaluator"]["operations"]["poll"])
         self.assertTrue(capabilities["providers"]["evaluator"]["operations"]["artifacts"])
 
-    def test_builtin_providers_share_provider_runtime_lifecycle(self) -> None:
+    def test_builtin_providers_share_provider_runtime_template(self) -> None:
         simulator = SimulatorProvider()
         multica = MulticaProvider()
         hermes = HermesOneshotProvider()
@@ -63,13 +63,12 @@ class ProviderApiV1Tests(unittest.TestCase):
         evaluator = EvaluatorProvider()
 
         self.assertIsInstance(simulator, ProviderRuntime)
-        self.assertTrue(simulator.uses_lifecycle_driver)
-        self.assertTrue(multica.uses_lifecycle_driver)
-        self.assertTrue(hermes.uses_lifecycle_driver)
-        self.assertTrue(codex.uses_lifecycle_driver)
-        self.assertTrue(claude.uses_lifecycle_driver)
-        self.assertTrue(claude_huawei.uses_lifecycle_driver)
-        self.assertTrue(evaluator.uses_lifecycle_driver)
+        self.assertIsInstance(multica, ProviderRuntime)
+        self.assertIsInstance(hermes, ProviderRuntime)
+        self.assertIsInstance(codex, ProviderRuntime)
+        self.assertIsInstance(claude, ProviderRuntime)
+        self.assertIsInstance(claude_huawei, ProviderRuntime)
+        self.assertIsInstance(evaluator, ProviderRuntime)
         self.assertTrue(simulator.capabilities()["operations"]["resume"])
         self.assertTrue(multica.capabilities()["operations"]["resume"])
         self.assertTrue(hermes.capabilities()["operations"]["resume"])
@@ -81,7 +80,7 @@ class ProviderApiV1Tests(unittest.TestCase):
         with self.assertRaisesRegex(NotImplementedError, "does not support human-input resume"):
             claude.resume("a2a-task-test", {})
 
-    def test_multica_provider_uses_lifecycle_driver(self) -> None:
+    def test_multica_provider_uses_lifecycle_template(self) -> None:
         provider = MulticaProvider()
         task = _task("a2a-task-multica", "multica", "TASK_STATE_WORKING")
         completed = _task("a2a-task-multica", "multica", "TASK_STATE_COMPLETED")
@@ -104,7 +103,7 @@ class ProviderApiV1Tests(unittest.TestCase):
         self.assertTrue(polled["done"])
         self.assertEqual(polled["task"]["status"]["state"], "TASK_STATE_COMPLETED")
 
-    def test_hermes_provider_uses_lifecycle_driver(self) -> None:
+    def test_hermes_provider_uses_lifecycle_template(self) -> None:
         provider = HermesOneshotProvider()
         task = _task("a2a-task-hermes", "hermes", "TASK_STATE_WORKING")
         completed = _task("a2a-task-hermes", "hermes", "TASK_STATE_COMPLETED")
@@ -127,7 +126,7 @@ class ProviderApiV1Tests(unittest.TestCase):
         self.assertTrue(polled["done"])
         self.assertEqual(polled["task"]["status"]["state"], "TASK_STATE_COMPLETED")
 
-    def test_codex_cli_provider_uses_lifecycle_driver(self) -> None:
+    def test_codex_cli_provider_uses_lifecycle_template(self) -> None:
         provider = CodexCliProvider()
         task = _task("a2a-task-codex", "codex", "TASK_STATE_WORKING")
         completed = _task("a2a-task-codex", "codex", "TASK_STATE_COMPLETED")
@@ -151,7 +150,7 @@ class ProviderApiV1Tests(unittest.TestCase):
         self.assertTrue(polled["done"])
         self.assertEqual(polled["task"]["status"]["state"], "TASK_STATE_COMPLETED")
 
-    def test_claude_cli_provider_uses_lifecycle_driver(self) -> None:
+    def test_claude_cli_provider_uses_lifecycle_template(self) -> None:
         provider = ClaudeCliProvider()
         task = _task("a2a-task-claude", "claude", "TASK_STATE_WORKING")
         completed = _task("a2a-task-claude", "claude", "TASK_STATE_COMPLETED")
@@ -174,7 +173,7 @@ class ProviderApiV1Tests(unittest.TestCase):
         self.assertTrue(polled["done"])
         self.assertEqual(polled["task"]["status"]["state"], "TASK_STATE_COMPLETED")
 
-    def test_claude_huawei_cli_provider_uses_lifecycle_driver(self) -> None:
+    def test_claude_huawei_cli_provider_uses_lifecycle_template(self) -> None:
         provider = ClaudeHuaweiCliProvider()
         task = _task("a2a-task-claude-huawei", "claude-huawei", "TASK_STATE_WORKING")
 
@@ -251,7 +250,6 @@ def _task(task_id: str, backend: str, state: str) -> dict:
 
 class _TemplateProvider(ProviderRuntime):
     backend = "template"
-    uses_lifecycle_driver = True
 
     def __init__(self) -> None:
         self.started = False

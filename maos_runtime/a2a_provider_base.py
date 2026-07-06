@@ -77,11 +77,11 @@ class ProviderRuntime:
     create/poll/cancel/resume/events/artifacts details behind this stable v1
     contract.
 
-    Subclasses normally implement ``agent_card``, ``_create`` and ``_poll``.
-    Optional operations are enabled by setting the ``supports_*`` flags and
-    implementing ``_cancel`` or ``_resume``. Older ``send`` and
-    ``resume_human_response`` names remain as compatibility aliases for
-    existing workflow activities.
+    Subclasses implement ``agent_card``, ``start_invocation`` and
+    ``inspect_invocation``. Optional operations are enabled by setting the
+    ``supports_*`` flags and implementing ``_cancel`` or ``_resume``. Older
+    ``send`` and ``resume_human_response`` names remain as compatibility
+    aliases for existing workflow activities.
     """
 
     backend = ""
@@ -89,7 +89,6 @@ class ProviderRuntime:
     supports_cancel = False
     supports_resume = False
     supports_push_callbacks = False
-    uses_lifecycle_driver = False
 
     def agent_card(self, node: dict[str, Any]) -> dict[str, Any]:
         raise NotImplementedError
@@ -110,46 +109,34 @@ class ProviderRuntime:
         }
 
     def create(self, request: dict[str, Any]) -> dict[str, Any]:
-        if self.uses_lifecycle_driver:
-            context = ProviderTaskContext(backend=self.backend, request=request)
-            result = self.start_invocation(context)
-            return self._create_response_from_driver_result(result)
-        return self._create(request)
-
-    def _create(self, request: dict[str, Any]) -> dict[str, Any]:
-        raise NotImplementedError(f"{self.backend} provider does not implement create.")
+        context = ProviderTaskContext(backend=self.backend, request=request)
+        result = self.start_invocation(context)
+        return self._create_response_from_driver_result(result)
 
     def send(self, request: dict[str, Any]) -> dict[str, Any]:
         return self.create(request)
 
     def poll(self, task_id: str, request: dict[str, Any]) -> dict[str, Any]:
-        if self.uses_lifecycle_driver:
-            task = self.task_from_request_or_store(task_id, request)
-            context = ProviderTaskContext(
-                backend=self.backend,
-                request=request,
-                task_id=task_id,
-                task=task,
-                metadata=copy.deepcopy(task.get("metadata") or {}),
-            )
-            result = self.inspect_invocation(context)
-            return self._poll_response_from_driver_result(result)
-        return self._poll(task_id, request)
-
-    def _poll(self, task_id: str, request: dict[str, Any]) -> dict[str, Any]:
-        raise NotImplementedError(f"{self.backend} provider does not implement poll.")
+        task = self.task_from_request_or_store(task_id, request)
+        context = ProviderTaskContext(
+            backend=self.backend,
+            request=request,
+            task_id=task_id,
+            task=task,
+            metadata=copy.deepcopy(task.get("metadata") or {}),
+        )
+        result = self.inspect_invocation(context)
+        return self._poll_response_from_driver_result(result)
 
     def start_invocation(self, context: ProviderTaskContext) -> ProviderDriverResult:
         """Start a provider invocation and return a normalized driver result."""
 
-        return ProviderDriverResult.from_response(self._create(context.request))
+        raise NotImplementedError(f"{self.backend} provider does not implement start_invocation.")
 
     def inspect_invocation(self, context: ProviderTaskContext) -> ProviderDriverResult:
         """Inspect one provider invocation without blocking for completion."""
 
-        if not context.task_id:
-            raise ValueError("Provider poll context did not include a task id.")
-        return ProviderDriverResult.from_response(self._poll(context.task_id, context.request))
+        raise NotImplementedError(f"{self.backend} provider does not implement inspect_invocation.")
 
     def _create_response_from_driver_result(
         self,

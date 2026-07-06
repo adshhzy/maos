@@ -241,14 +241,23 @@ Current compatibility behavior exposes the latest Agent comment as
 ## Internal Provider API v1
 
 The Python provider interface lives in
-`maos_runtime.a2a_provider_base.AgentRuntimeProvider`.
+`maos_runtime.a2a_provider_base.ProviderRuntime`.
 
-Required methods:
+Required provider hooks:
 
 - `agent_card(node)`: returns the A2A AgentCard for the selected node.
+- `start_invocation(context)`: starts the backend invocation and returns a
+  `ProviderDriverResult`.
+- `inspect_invocation(context)`: performs one short status inspection and
+  returns a `ProviderDriverResult`.
+
+Base lifecycle methods supplied by `ProviderRuntime`:
+
 - `capabilities()`: returns backend operation support.
-- `create(request)`: creates or idempotently reuses an A2A task.
-- `poll(task_id, request)`: performs one short status poll.
+- `create(request)`: calls `start_invocation`, persists the returned A2A task,
+  and returns `{"task": ...}`.
+- `poll(task_id, request)`: calls `inspect_invocation`, persists the returned
+  A2A task, and returns `{"done": bool, "task": ..., "event": ...}`.
 - `cancel(task_id, request)`: cancels the external task when supported.
 - `resume(task_id, request)`: sends human input back to the external task.
 - `events(task_id, request)`: returns a task event snapshot or backend events.
@@ -260,12 +269,21 @@ Compatibility aliases:
 - `send(request)` delegates to `create(request)`.
 - `resume_human_response(task_id, request)` delegates to `resume(...)`.
 
+Providers should not implement legacy `_create()` or `_poll()` paths. The
+provider layer now uses the lifecycle hooks as the only create/poll mechanism.
+
 Built-in providers:
 
 - `simulator`: local test provider, callback capable, best-effort local cancel.
 - `multica`: real Multica-backed provider through Agent Service HTTP v1.
 - `hermes`: direct Hermes one-shot provider through Agent Service HTTP v1.
+- `codex`: local Codex CLI provider.
+- `claude`: local Claude CLI provider.
+- `claude-huawei`: local Claude CLI routed to Huawei Cloud DeepSeek.
+- `evaluator`: deterministic local evaluator provider.
 
 The workflow activity layer should call the runtime facade in `maos_runtime.a2a`
 rather than importing backend modules directly. This keeps future runtimes
 pluggable without changing Temporal workflow logic.
+
+For the full project API map, see `docs/api_reference.md`.

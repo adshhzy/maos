@@ -166,6 +166,18 @@ The `All Tasks Board` above the graph summarizes the whole batch:
 
 ## Sandbox microservice API
 
+Full current API reference:
+
+```text
+docs/api_reference.md
+```
+
+The canonical OpenAPI UI is available when the Sandbox API is running:
+
+```text
+http://127.0.0.1:8766/docs
+```
+
 Create one or more control-flow graph tasks:
 
 ```http
@@ -243,7 +255,7 @@ D:\dev\MAOS\A2A
 
 Each activity node is modeled as one local Agent invocation. A2A is used for
 data transfer between dependent or control-flow-linked Agent nodes. The local adapter in
-`a2a_runtime.py` follows the A2A shape of AgentCard, Message, Part, Task,
+`maos_runtime.a2a` follows the A2A shape of AgentCard, Message, Part, Task,
 TaskStatus, and Artifact:
 
 - Temporal invokes the node's local Agent and gives it an A2A `Message`.
@@ -252,9 +264,9 @@ TaskStatus, and Artifact:
 - The Agent immediately returns an A2A `Task` in `TASK_STATE_WORKING`.
 - A simulator-backed node posts a callback to the sandbox API when the mock
   work completes.
-- A Multica-backed node is created through `POST /tasks` on the Agent Service
-  facade. Until that facade exposes push callbacks, the workflow uses durable
-  Temporal timers and short polling activities to query `GET /tasks/{id}`.
+- A Multica-backed node is created through `POST /api/v1/agent-tasks` on the
+  Agent Service facade. The workflow uses durable Temporal timers and short
+  polling activities to query `GET /api/v1/agent-tasks/{id}`.
 - Both backends are normalized into completed A2A `Task`/`Artifact` objects.
 - The workflow reads the node result from the A2A `Artifact` data part.
 - Downstream Agent nodes receive those result artifacts through their own A2A

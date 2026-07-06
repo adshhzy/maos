@@ -5,6 +5,8 @@ activities call the stable provider API (`create`, `poll`, `cancel`, `resume`,
 `events`, `artifacts`) while each provider supplies only backend-specific driver
 hooks.
 
+For the full HTTP and internal API map, see `docs/api_reference.md`.
+
 ## Lifecycle
 
 The normalized task states are:
@@ -22,13 +24,7 @@ states.
 
 ## Template Hooks
 
-Providers can opt into the unified lifecycle by setting:
-
-```python
-uses_lifecycle_driver = True
-```
-
-Then implement:
+Provider lifecycle hooks are mandatory for every provider:
 
 ```python
 def start_invocation(self, context: ProviderTaskContext) -> ProviderDriverResult:
@@ -45,12 +41,14 @@ task snapshot, and returns `{"task": ...}`.
 `inspect_invocation()`, persists the returned task snapshot, and returns the
 standard `{"done": bool, "task": ..., "event": ...}` shape.
 
-Providers that have not opted in continue to use the legacy `_create()` and
-`_poll()` methods.
+`send()` remains a compatibility alias for `create()`, and
+`resume_human_response()` remains a compatibility alias for `resume()`. Provider
+implementations should not define legacy `_create()` or `_poll()` methods.
 
-## Current Migration Status
+## Built-In Providers
 
-Migrated to lifecycle hooks:
+All built-in providers directly inherit `ProviderRuntime` and implement the
+mandatory lifecycle hooks:
 
 - `SimulatorProvider`
 - `EvaluatorProvider`
@@ -60,17 +58,13 @@ Migrated to lifecycle hooks:
 - `MulticaProvider`
 - `HermesOneshotProvider`
 
-Still using legacy methods internally:
-
-- None of the built-in providers.
-
-The staged migration kept each backend's existing transport implementation
-stable while moving provider-level create/poll orchestration into the common
-runtime template.
+Backend transport helpers such as `_send_claude_message()` or
+`_poll_multica_task()` remain backend-specific implementation details. The
+provider layer is responsible for converting those backend responses into
+`ProviderDriverResult`.
 
 ## Next Migration Step
 
-The next useful step is to harden the shared remote-provider driver with common
-HTTP error normalization, retry classification, and cancel/resume projection
-helpers so `Multica` and `Hermes` share more transport-level behavior without
-duplicating backend-specific API details.
+The next useful step is to harden the backend transport helpers with common HTTP
+error normalization, retry classification, and cancel/resume projection helpers
+without reintroducing provider-level create/poll compatibility branches.
