@@ -124,13 +124,15 @@ Replay export request:
 
 ### Execution Store
 
-Execution Store is the persisted read model for completed and archived workflow
-results.
+Execution Store is the primary persisted read model for active, completed, and
+archived workflow results. Task rows and task details are rebuilt from
+structured store projections; raw snapshots are kept only as compatibility and
+audit/debug fallback.
 
 | Method | Path | Description |
 | --- | --- | --- |
 | `GET` | `/api/execution-store/workflows?limit=100` | List persisted workflow runs |
-| `GET` | `/api/execution-store/workflows/{workflow_id}` | Load one persisted workflow task snapshot |
+| `GET` | `/api/execution-store/workflows/{workflow_id}` | Load one persisted workflow task projection |
 
 ### Agent Callbacks and Events
 

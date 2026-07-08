@@ -2,8 +2,11 @@
 
 from maos_runtime.persistence.execution_store import (
     execution_store_db_file,
+    list_human_intervention_projections,
     list_workflow_runs,
+    list_workflow_task_projections,
     load_evaluation_report,
+    load_workflow_task_projection,
     load_workflow_task_snapshot,
     persist_artifact_record,
     persist_provider_task_record,
@@ -12,8 +15,11 @@ from maos_runtime.persistence.execution_store import (
 
 __all__ = [
     "execution_store_db_file",
+    "list_human_intervention_projections",
     "list_workflow_runs",
+    "list_workflow_task_projections",
     "load_evaluation_report",
+    "load_workflow_task_projection",
     "load_workflow_task_snapshot",
     "persist_artifact_record",
     "persist_provider_task_record",

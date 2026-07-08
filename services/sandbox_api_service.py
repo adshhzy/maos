@@ -15,7 +15,9 @@ from maos_runtime.a2a.artifact_store import load_artifact
 from maos_runtime.a2a.codex_pool import codex_runtime_pool_status
 from maos_runtime.persistence import (
     execution_store_db_file,
+    list_human_intervention_projections,
     list_workflow_runs,
+    load_workflow_task_projection,
     load_workflow_task_snapshot,
 )
 from maos_runtime.sandbox_runtime import (
@@ -215,7 +217,7 @@ def create_app(config: SandboxApiConfig | None = None) -> FastAPI:
 
     @app.get("/api/execution-store/workflows/{workflow_id}", tags=["execution-store"])
     def execution_store_workflow(workflow_id: str) -> dict[str, Any]:
-        task = load_workflow_task_snapshot(workflow_id)
+        task = load_workflow_task_projection(workflow_id)
         if not task:
             raise HTTPException(status_code=404, detail=f"Workflow not found in execution store: {workflow_id}")
         return {
@@ -223,6 +225,7 @@ def create_app(config: SandboxApiConfig | None = None) -> FastAPI:
             "db_file": execution_store_db_file(),
             "workflow_id": workflow_id,
             "task": task,
+            "raw_snapshot_available": bool(load_workflow_task_snapshot(workflow_id)),
         }
 
     @app.post("/api/tasks/{task_id}/export-markdown", tags=["tasks"])
@@ -280,7 +283,11 @@ def create_app(config: SandboxApiConfig | None = None) -> FastAPI:
         status: str | None = Query(default=None),
     ) -> dict[str, Any]:
         try:
-            items = _manager().human_interventions(task_id=task_id, status=status)
+            if task_id:
+                refresh_task_from_live_if_available(_manager(), task_id)
+            items = list_human_intervention_projections(workflow_id=task_id, status=status)
+            if not items:
+                items = _manager().human_interventions(task_id=task_id, status=status)
         except KeyError as exc:
             raise HTTPException(status_code=404, detail=f"Task not found: {task_id}") from exc
         except Exception as exc:
@@ -293,7 +300,10 @@ def create_app(config: SandboxApiConfig | None = None) -> FastAPI:
         status: str | None = Query(default=None),
     ) -> dict[str, Any]:
         try:
-            items = _manager().human_interventions(task_id=task_id, status=status)
+            refresh_task_from_live_if_available(_manager(), task_id)
+            items = list_human_intervention_projections(workflow_id=task_id, status=status)
+            if not items:
+                items = _manager().human_interventions(task_id=task_id, status=status)
         except KeyError as exc:
             raise HTTPException(status_code=404, detail=f"Task not found: {task_id}") from exc
         except Exception as exc:
@@ -447,26 +457,36 @@ def _flatten_graph_payloads(items: list[dict[str, Any]]) -> list[dict[str, Any]]
 
 
 def task_snapshot_with_execution_store_fallback(manager: Any, task_id: str) -> dict[str, Any]:
-    """Read a task with Execution Store as primary, refreshing from live if possible."""
+    """Read a task with structured Execution Store projection as primary."""
 
     live_task: dict[str, Any] | None = None
-    try:
-        live_task = manager.task_snapshot(task_id)
-        refresh_execution_store_from_live_tasks(
-            [live_task],
-            source="live_task_detail_refresh",
-        )
-    except KeyError:
-        pass
-    except Exception:
-        pass
+    live_task = refresh_task_from_live_if_available(manager, task_id)
 
-    task = load_workflow_task_snapshot(task_id)
+    task = load_workflow_task_projection(task_id)
     if task:
         return task
+    snapshot = load_workflow_task_snapshot(task_id)
+    if snapshot:
+        return snapshot
     if live_task:
         return live_task
     raise KeyError(task_id)
+
+
+def refresh_task_from_live_if_available(manager: Any, task_id: str) -> dict[str, Any] | None:
+    """Best-effort live refresh into Execution Store without making live the read source."""
+
+    try:
+        live_task = manager.task_snapshot(task_id)
+    except KeyError:
+        return None
+    except Exception:
+        return None
+    refresh_execution_store_from_live_tasks(
+        [live_task],
+        source="live_task_detail_refresh",
+    )
+    return live_task
 
 
 def projected_task_snapshot_with_execution_store_fallback(manager: Any, task_id: str) -> dict[str, Any]:

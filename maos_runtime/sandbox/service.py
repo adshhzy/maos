@@ -10,6 +10,7 @@ from temporalio.worker import Worker
 
 from maos_runtime.a2a import complete_task_from_agent_callback
 from maos_runtime.dag_workflow import ACTIVITIES, JsonDagWorkflow, validate_graph
+from maos_runtime.persistence import persist_workflow_task_snapshot
 from maos_runtime.sandbox.api_projection import (
     _completed_workflow_display_limit,
     _minimal_task,
@@ -23,6 +24,7 @@ from maos_runtime.sandbox.api_projection import (
     _task_list_item_for_api,
     _truthy_env,
 )
+from maos_runtime.sandbox.preview import preview_state
 from maos_runtime.sandbox.constants import (
     DEFAULT_TEMPORAL_DB_FILE,
     DEFAULT_TEMPORAL_HOST,
@@ -227,8 +229,36 @@ class TemporalTaskService:
                 },
                 static_summary=f"{graph.get('name', graph['id'])} ({graph['id']})",
             )
+            self._persist_submitted_task(task_id, graph)
             task_ids.append(task_id)
         return task_ids
+
+    def _persist_submitted_task(self, task_id: str, graph: dict[str, Any]) -> None:
+        try:
+            state = preview_state(graph)
+            state["workflow_status"] = "running"
+            persist_workflow_task_snapshot(
+                {
+                    "task_id": task_id,
+                    "workflow_id": task_id,
+                    "graph_id": state.get("graph_id") or graph.get("id") or task_id,
+                    "graph_name": state.get("graph_name") or graph.get("name") or task_id,
+                    "graph_type": state.get("graph_type"),
+                    "submitted_at": time.time(),
+                    "updated_at": time.time(),
+                    "status": "running",
+                    "state": state,
+                    "result": {
+                        "status": "running",
+                        "graph_id": state.get("graph_id") or graph.get("id") or task_id,
+                        "graph_name": state.get("graph_name") or graph.get("name") or task_id,
+                        "state": state,
+                    },
+                },
+                source="workflow_submitted",
+            )
+        except Exception:
+            return
 
     async def _signal_agent_event(self, event: dict[str, Any]) -> None:
         workflow_id = event.get("workflow_id")

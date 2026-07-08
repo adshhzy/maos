@@ -9,8 +9,10 @@ from maos_runtime.a2a.artifact_store import store_dependency_artifact
 from maos_runtime.a2a_task_store import store_idempotent_task
 from maos_runtime.persistence import (
     execution_store_db_file,
+    list_human_intervention_projections,
     list_workflow_runs,
     load_evaluation_report,
+    load_workflow_task_projection,
     load_workflow_task_snapshot,
 )
 from maos_runtime.sandbox.task_archive import archive_task
@@ -133,6 +135,69 @@ class ExecutionStoreTests(unittest.TestCase):
                 self.assertEqual(_count(conn, "edge_transitions"), 1)
                 self.assertEqual(_count(conn, "evaluation_reports"), 1)
                 self.assertEqual(_count(conn, "evaluation_test_cases"), 2)
+
+    def test_task_projection_survives_without_snapshot_json(self) -> None:
+        with _isolated_data_dir():
+            task = {
+                "task_id": "workflow-projection",
+                "workflow_id": "workflow-projection",
+                "graph_id": "graph-projection",
+                "graph_name": "Projection Graph",
+                "graph_type": "control_flow",
+                "status": "completed",
+                "state": {
+                    "graph_id": "graph-projection",
+                    "graph_name": "Projection Graph",
+                    "graph_type": "control_flow",
+                    "workflow_status": "completed",
+                    "nodes": [
+                        {
+                            "id": "agent_a",
+                            "type": "agent",
+                            "backend": "claude",
+                            "status": "completed",
+                            "current_instance_id": "agent_a#1",
+                            "a2a_task_id": "a2a-claude-a",
+                        }
+                    ],
+                    "edges": [{"from": "agent_a", "to": "final", "taken_count": 1}],
+                    "human_interventions": [
+                        {
+                            "intervention_id": "human-1",
+                            "node_instance_id": "agent_a#1",
+                            "status": "resolved",
+                            "prompt": "确认是否继续",
+                        }
+                    ],
+                    "results": {
+                        "agent_a": {
+                            "agent_backend": "claude",
+                            "latest_comment": "完整输出",
+                            "decision": "approved",
+                        }
+                    },
+                },
+            }
+            archive_task(task)
+            with sqlite3.connect(execution_store_db_file()) as conn:
+                conn.execute(
+                    "UPDATE workflow_runs SET snapshot_json = NULL WHERE workflow_id = ?",
+                    ("workflow-projection",),
+                )
+                conn.commit()
+
+            self.assertIsNone(load_workflow_task_snapshot("workflow-projection"))
+            projected = load_workflow_task_projection("workflow-projection")
+            self.assertIsNotNone(projected)
+            assert projected is not None
+            self.assertEqual(projected["_projection"]["source"], "execution_store")
+            self.assertFalse(projected["_projection"]["snapshot_available"])
+            self.assertEqual(projected["graph_name"], "Projection Graph")
+            self.assertEqual(projected["state"]["nodes"][0]["current_instance_id"], "agent_a#1")
+            self.assertEqual(projected["state"]["results"]["agent_a"]["latest_comment"], "完整输出")
+            self.assertEqual(projected["result"]["results"]["agent_a"]["decision"], "approved")
+            interventions = list_human_intervention_projections(workflow_id="workflow-projection")
+            self.assertEqual(interventions[0]["intervention_id"], "human-1")
 
     def test_provider_task_store_projects_invocation_and_artifact(self) -> None:
         with _isolated_data_dir() as data_dir:

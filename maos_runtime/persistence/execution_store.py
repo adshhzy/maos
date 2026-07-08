@@ -253,6 +253,154 @@ def load_workflow_task_snapshot(workflow_id: str) -> dict[str, Any] | None:
         return None
 
 
+def load_workflow_task_projection(workflow_id: str) -> dict[str, Any] | None:
+    """Rebuild one workflow task from Execution Store structured tables.
+
+    `snapshot_json` is kept as a raw archive, but this projection is the primary
+    read model for Web/API consumers. It reconstructs graph shape, node
+    instances, results, provider links, artifacts, human interventions, and
+    evaluator reports from normalized tables.
+    """
+
+    with _STORE_LOCK, _connection() as conn:
+        _ensure_schema(conn)
+        workflow = conn.execute(
+            "SELECT * FROM workflow_runs WHERE workflow_id = ?",
+            (workflow_id,),
+        ).fetchone()
+        if workflow is None:
+            return None
+        graph = conn.execute(
+            """
+            SELECT * FROM graph_definitions
+            WHERE graph_id = ? AND graph_version = ?
+            """,
+            (
+                workflow["graph_id"],
+                workflow["graph_version"] or "v1",
+            ),
+        ).fetchone()
+        if graph is None:
+            graph = conn.execute(
+                """
+                SELECT * FROM graph_definitions
+                WHERE graph_id = ?
+                ORDER BY created_at DESC
+                LIMIT 1
+                """,
+                (workflow["graph_id"],),
+            ).fetchone()
+        node_rows = conn.execute(
+            """
+            SELECT * FROM node_instances
+            WHERE workflow_id = ?
+            ORDER BY node_id, visit, attempt, COALESCE(updated_at, finished_at, started_at, '')
+            """,
+            (workflow_id,),
+        ).fetchall()
+        edge_rows = conn.execute(
+            """
+            SELECT * FROM edge_transitions
+            WHERE workflow_id = ?
+            ORDER BY created_at, transition_id
+            """,
+            (workflow_id,),
+        ).fetchall()
+        provider_rows = conn.execute(
+            """
+            SELECT * FROM provider_invocations
+            WHERE workflow_id = ?
+            ORDER BY COALESCE(updated_at, finished_at, started_at, created_at, ''), provider_invocation_id
+            """,
+            (workflow_id,),
+        ).fetchall()
+        artifact_rows = conn.execute(
+            """
+            SELECT * FROM artifacts
+            WHERE workflow_id = ?
+            ORDER BY created_at, artifact_id
+            """,
+            (workflow_id,),
+        ).fetchall()
+        human_rows = conn.execute(
+            """
+            SELECT * FROM human_interventions
+            WHERE workflow_id = ?
+            ORDER BY COALESCE(created_at, responded_at, ''), intervention_id
+            """,
+            (workflow_id,),
+        ).fetchall()
+        event_rows = conn.execute(
+            """
+            SELECT * FROM execution_events
+            WHERE workflow_id = ?
+            ORDER BY event_time, event_id
+            """,
+            (workflow_id,),
+        ).fetchall()
+        evaluation_rows = conn.execute(
+            """
+            SELECT evaluation_id FROM evaluation_reports
+            WHERE workflow_id = ?
+            ORDER BY created_at, evaluation_id
+            """,
+            (workflow_id,),
+        ).fetchall()
+
+    return _workflow_projection_from_rows(
+        workflow=dict(workflow),
+        graph=dict(graph) if graph else None,
+        node_rows=[dict(row) for row in node_rows],
+        edge_rows=[dict(row) for row in edge_rows],
+        provider_rows=[dict(row) for row in provider_rows],
+        artifact_rows=[dict(row) for row in artifact_rows],
+        human_rows=[dict(row) for row in human_rows],
+        event_rows=[dict(row) for row in event_rows],
+        evaluation_ids=[str(row["evaluation_id"]) for row in evaluation_rows],
+    )
+
+
+def list_workflow_task_projections(limit: int | None = 100) -> list[dict[str, Any]]:
+    """List workflow task projections using Execution Store as the read source."""
+
+    rows = list_workflow_runs(limit=limit)
+    projections: list[dict[str, Any]] = []
+    for row in rows:
+        workflow_id = str(row.get("workflow_id") or "")
+        if not workflow_id:
+            continue
+        task = load_workflow_task_projection(workflow_id)
+        if task:
+            projections.append(task)
+    return projections
+
+
+def list_human_intervention_projections(
+    *,
+    workflow_id: str | None = None,
+    status: str | None = None,
+) -> list[dict[str, Any]]:
+    """List human interventions from Execution Store."""
+
+    clauses: list[str] = []
+    params: list[Any] = []
+    if workflow_id:
+        clauses.append("workflow_id = ?")
+        params.append(workflow_id)
+    if status:
+        clauses.append("status = ?")
+        params.append(status)
+    sql = (
+        "SELECT * FROM human_interventions"
+        + (" WHERE " + " AND ".join(clauses) if clauses else "")
+        + " ORDER BY COALESCE(created_at, responded_at, '') DESC, intervention_id DESC"
+    )
+    with _STORE_LOCK, _connection() as conn:
+        _ensure_schema(conn)
+        rows = conn.execute(sql, tuple(params)).fetchall()
+    return [_human_intervention_from_row(dict(row)) for row in rows]
+
+
 def load_evaluation_report(evaluation_id: str) -> dict[str, Any] | None:
     """Load a structured evaluator report by evaluator/provider task id."""
 
@@ -336,6 +484,306 @@ def list_workflow_runs(limit: int | None = 100) -> list[dict[str, Any]]:
         _ensure_schema(conn)
         rows = conn.execute(sql, params).fetchall()
     return [dict(row) for row in rows]
+
+
+def _workflow_projection_from_rows(
+    *,
+    workflow: dict[str, Any],
+    graph: dict[str, Any] | None,
+    node_rows: list[dict[str, Any]],
+    edge_rows: list[dict[str, Any]],
+    provider_rows: list[dict[str, Any]],
+    artifact_rows: list[dict[str, Any]],
+    human_rows: list[dict[str, Any]],
+    event_rows: list[dict[str, Any]],
+    evaluation_ids: list[str],
+) -> dict[str, Any]:
+    graph_json = _json_loads_dict(graph.get("graph_json") if graph else None)
+    graph_id = str(workflow.get("graph_id") or graph_json.get("id") or workflow.get("workflow_id"))
+    graph_name = str(workflow.get("graph_name") or graph_json.get("name") or graph_id)
+    graph_type = workflow.get("graph_type") or graph_json.get("graph_type")
+    status = str(workflow.get("status") or "unknown")
+
+    provider_by_id = {
+        str(row.get("provider_invocation_id")): _provider_invocation_from_row(row)
+        for row in provider_rows
+        if row.get("provider_invocation_id")
+    }
+    artifacts = [_artifact_from_row(row) for row in artifact_rows]
+    artifacts_by_instance: dict[str, list[dict[str, Any]]] = {}
+    artifacts_by_provider: dict[str, list[dict[str, Any]]] = {}
+    for artifact in artifacts:
+        if artifact.get("node_instance_id"):
+            artifacts_by_instance.setdefault(str(artifact["node_instance_id"]), []).append(artifact)
+        if artifact.get("provider_invocation_id"):
+            artifacts_by_provider.setdefault(str(artifact["provider_invocation_id"]), []).append(artifact)
+
+    node_order: list[str] = []
+    nodes_by_id: dict[str, dict[str, Any]] = {}
+    for raw_node in graph_json.get("nodes") or []:
+        if not isinstance(raw_node, dict) or not raw_node.get("id"):
+            continue
+        node_id = str(raw_node["id"])
+        node_order.append(node_id)
+        nodes_by_id[node_id] = dict(raw_node)
+
+    instances: list[dict[str, Any]] = []
+    results: dict[str, Any] = {}
+    instance_results: dict[str, Any] = {}
+    latest_instance_key: dict[str, tuple[int, int, str]] = {}
+    for row in node_rows:
+        payload = _json_loads_dict(row.get("payload_json"))
+        persisted_instance = payload.get("instance") if isinstance(payload.get("instance"), dict) else {}
+        persisted_node = payload.get("node") if isinstance(payload.get("node"), dict) else {}
+        result_payload = payload.get("result") if isinstance(payload.get("result"), dict) else {}
+
+        node_id = str(row.get("node_id") or persisted_instance.get("node_id") or persisted_node.get("id") or "")
+        if not node_id:
+            continue
+        if node_id not in nodes_by_id:
+            node_order.append(node_id)
+            nodes_by_id[node_id] = {"id": node_id}
+        node = nodes_by_id[node_id]
+        node.update({key: value for key, value in persisted_node.items() if value is not None})
+
+        instance_id = str(row.get("node_instance_id") or persisted_instance.get("id") or f"{node_id}#1")
+        provider_id = row.get("provider_invocation_id") or persisted_instance.get("a2a_task_id")
+        provider = provider_by_id.get(str(provider_id)) if provider_id else None
+        instance = {
+            **persisted_instance,
+            "id": instance_id,
+            "node_id": node_id,
+            "visit": _int_or(row.get("visit"), _int_or(persisted_instance.get("visit"), 1)),
+            "attempt": _int_or(row.get("attempt"), _int_or(persisted_instance.get("attempt"), 1)),
+            "status": row.get("status") or persisted_instance.get("status") or node.get("status"),
+            "backend": row.get("backend") or persisted_instance.get("backend") or node.get("backend"),
+            "started_at": row.get("started_at") or persisted_instance.get("started_at"),
+            "finished_at": row.get("finished_at") or persisted_instance.get("finished_at"),
+            "updated_at": row.get("updated_at") or persisted_instance.get("updated_at"),
+            "output_artifact_id": row.get("output_artifact_id") or persisted_instance.get("output_artifact_id"),
+            "provider_invocation_id": provider_id,
+            "error": row.get("error") or persisted_instance.get("error"),
+        }
+        if provider:
+            instance.update(_provider_runtime_fields(provider))
+        if artifacts_by_instance.get(instance_id):
+            instance["artifacts"] = artifacts_by_instance[instance_id]
+        elif provider_id and artifacts_by_provider.get(str(provider_id)):
+            instance["artifacts"] = artifacts_by_provider[str(provider_id)]
+        instances.append(instance)
+
+        result = dict(result_payload)
+        result.setdefault("status", instance.get("status"))
+        if instance.get("backend"):
+            result.setdefault("agent_backend", instance.get("backend"))
+        if provider:
+            result.update({key: value for key, value in _provider_runtime_fields(provider).items() if value})
+        if instance.get("output_artifact_id"):
+            result.setdefault("output_artifact_id", instance.get("output_artifact_id"))
+        if instance.get("error"):
+            result.setdefault("error", instance.get("error"))
+        instance_results[instance_id] = result
+
+        visit = _int_or(instance.get("visit"), 1) or 1
+        attempt = _int_or(instance.get("attempt"), 1) or 1
+        updated = str(instance.get("updated_at") or instance.get("finished_at") or instance.get("started_at") or "")
+        key = (visit, attempt, updated)
+        if key >= latest_instance_key.get(node_id, (0, 0, "")):
+            latest_instance_key[node_id] = key
+            results[node_id] = result
+            node["status"] = instance.get("status") or node.get("status")
+            node["backend"] = instance.get("backend") or node.get("backend")
+            node["current_instance_id"] = instance_id
+            node["visits"] = max(_int_or(node.get("visits"), 0) or 0, visit)
+            if provider:
+                node.update({key: value for key, value in _provider_runtime_fields(provider).items() if value})
+            if instance.get("output_artifact_id"):
+                node["output_artifact_id"] = instance.get("output_artifact_id")
+                node["output_available"] = True
+        node.setdefault("instances", [])
+        node["instances"].append(instance)
+
+    edges = _edge_projections(graph_json.get("edges"), edge_rows)
+    human_interventions = [_human_intervention_from_row(row) for row in human_rows]
+    pending_human_interventions = [
+        item for item in human_interventions if str(item.get("status") or "").lower() in {"pending", "waiting", "waiting_human", "input_required"}
+    ]
+    evaluation_reports = [
+        report for report in (load_evaluation_report(evaluation_id) for evaluation_id in evaluation_ids) if report
+    ]
+    events = [_execution_event_from_row(row) for row in event_rows]
+
+    nodes = [nodes_by_id[node_id] for node_id in node_order if node_id in nodes_by_id]
+    state = {
+        "graph_id": graph_id,
+        "graph_name": graph_name,
+        "graph_type": graph_type,
+        "graph_version": workflow.get("graph_version") or "v1",
+        "workflow_status": status,
+        "levels": graph_json.get("levels") or [],
+        "edges": edges,
+        "nodes": nodes,
+        "instances": instances,
+        "results": results,
+        "instance_results": instance_results,
+        "artifacts": artifacts,
+        "provider_invocations": list(provider_by_id.values()),
+        "human_interventions": human_interventions,
+        "pending_human_interventions": pending_human_interventions,
+        "evaluation_reports": evaluation_reports,
+        "events": events,
+    }
+    result = {
+        "status": status,
+        "graph_id": graph_id,
+        "graph_name": graph_name,
+        "graph_type": graph_type,
+        "node_count": len(nodes),
+        "instance_count": len(instances),
+        "results": results,
+        "instance_results": instance_results,
+        "evaluation_reports": evaluation_reports,
+        "state": state,
+    }
+    if workflow.get("error"):
+        result["error"] = workflow.get("error")
+
+    return {
+        "task_id": workflow.get("workflow_id"),
+        "workflow_id": workflow.get("workflow_id"),
+        "graph_id": graph_id,
+        "graph_name": graph_name,
+        "graph_type": graph_type,
+        "status": status,
+        "submitted_at": workflow.get("submitted_at"),
+        "started_at": workflow.get("started_at"),
+        "finished_at": workflow.get("finished_at"),
+        "updated_at": workflow.get("updated_at"),
+        "error": workflow.get("error"),
+        "state": state,
+        "result": result,
+        "_projection": {
+            "source": "execution_store",
+            "version": 1,
+            "snapshot_available": bool(workflow.get("snapshot_json")),
+            "workflow_source": workflow.get("source"),
+        },
+    }
+
+
+def _provider_invocation_from_row(row: dict[str, Any]) -> dict[str, Any]:
+    task = _json_loads_dict(row.get("task_json"))
+    return {
+        "provider_invocation_id": row.get("provider_invocation_id"),
+        "workflow_id": row.get("workflow_id"),
+        "node_instance_id": row.get("node_instance_id"),
+        "node_id": row.get("node_id"),
+        "provider": row.get("provider"),
+        "external_task_id": row.get("external_task_id"),
+        "idempotency_key": row.get("idempotency_key"),
+        "status": row.get("status"),
+        "created_at": row.get("created_at"),
+        "submitted_at": row.get("submitted_at"),
+        "started_at": row.get("started_at"),
+        "finished_at": row.get("finished_at"),
+        "updated_at": row.get("updated_at"),
+        "last_heartbeat_at": row.get("last_heartbeat_at"),
+        "input_artifact_id": row.get("input_artifact_id"),
+        "output_artifact_id": row.get("output_artifact_id"),
+        "trace_artifact_id": row.get("trace_artifact_id"),
+        "error": row.get("error"),
+        "task": task,
+    }
+
+
+def _provider_runtime_fields(provider: dict[str, Any]) -> dict[str, Any]:
+    backend = str(provider.get("provider") or "").lower()
+    provider_id = provider.get("provider_invocation_id")
+    external_id = provider.get("external_task_id") or provider_id
+    fields: dict[str, Any] = {
+        "a2a_task_id": provider_id,
+        "provider_invocation_id": provider_id,
+    }
+    if backend in {"claude", "claude-cli", "claude-huawei", "claude-huawei-cli"}:
+        fields["claude_task_id"] = provider_id
+    elif backend in {"codex", "codex-cli"}:
+        fields["codex_task_id"] = provider_id
+    elif backend in {"multica", "hermes"}:
+        fields["agent_service_task_id"] = external_id
+    elif backend == "evaluator":
+        fields["evaluation_task_id"] = provider_id
+    return fields
+
+
+def _artifact_from_row(row: dict[str, Any]) -> dict[str, Any]:
+    metadata = _json_loads_dict(row.get("metadata_json"))
+    return {
+        "artifact_id": row.get("artifact_id"),
+        "artifact_ref": row.get("artifact_id"),
+        "workflow_id": row.get("workflow_id"),
+        "node_instance_id": row.get("node_instance_id"),
+        "provider_invocation_id": row.get("provider_invocation_id"),
+        "kind": row.get("kind"),
+        "uri": row.get("uri"),
+        "mime_type": row.get("mime_type"),
+        "size": row.get("size_bytes"),
+        "size_bytes": row.get("size_bytes"),
+        "content_hash": row.get("sha256"),
+        "sha256": row.get("sha256"),
+        "summary": row.get("summary"),
+        "preview": row.get("preview"),
+        "created_at": row.get("created_at"),
+        "metadata": metadata,
+    }
+
+
+def _edge_projections(raw_edges: Any, edge_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    if edge_rows:
+        edges: list[dict[str, Any]] = []
+        for row in edge_rows:
+            payload = _json_loads_dict(row.get("payload_json"))
+            edge = dict(payload) if payload else {}
+            edge.setdefault("id", row.get("edge_id"))
+            edge.setdefault("from", row.get("from_node_id"))
+            edge.setdefault("to", row.get("to_node_id"))
+            edge.setdefault("when", row.get("condition"))
+            edge.setdefault("label", row.get("decision_source"))
+            edge["taken_count"] = row.get("taken_count") or 0
+            edge["skipped_count"] = row.get("skipped_count") or 0
+            edge["condition_result"] = row.get("condition_result")
+            edges.append(edge)
+        return edges
+    return [dict(edge) for edge in raw_edges or [] if isinstance(edge, dict)]
+
+
+def _human_intervention_from_row(row: dict[str, Any]) -> dict[str, Any]:
+    payload = _json_loads_dict(row.get("payload_json"))
+    return {
+        **payload,
+        "intervention_id": payload.get("intervention_id") or payload.get("id") or row.get("intervention_id"),
+        "id": payload.get("id") or row.get("intervention_id"),
+        "workflow_id": row.get("workflow_id"),
+        "node_instance_id": row.get("node_instance_id"),
+        "provider_invocation_id": row.get("provider_invocation_id"),
+        "status": row.get("status") or payload.get("status"),
+        "requested_by": row.get("requested_by") or payload.get("requested_by"),
+        "assignee": row.get("assignee") or payload.get("assignee") or payload.get("assignee_role"),
+        "created_at": row.get("created_at") or payload.get("created_at"),
+        "responded_at": row.get("responded_at") or payload.get("responded_at"),
+        "expires_at": row.get("expires_at") or payload.get("expires_at"),
+    }
+
+
+def _execution_event_from_row(row: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "event_id": row.get("event_id"),
+        "workflow_id": row.get("workflow_id"),
+        "node_instance_id": row.get("node_instance_id"),
+        "provider_invocation_id": row.get("provider_invocation_id"),
+        "event_type": row.get("event_type"),
+        "event_time": row.get("event_time"),
+        "payload": _json_loads_dict(row.get("payload_json")),
+    }
 
 
 def _evaluation_test_matrix(report: dict[str, Any]) -> dict[str, Any]:
@@ -1053,10 +1501,27 @@ def _ensure_schema(conn: sqlite3.Connection) -> None:
 
 
 def _instance_results(state: dict[str, Any], result: dict[str, Any]) -> dict[str, Any]:
+    merged: dict[str, Any] = {}
     for container in (state, result, result.get("state") if isinstance(result.get("state"), dict) else {}):
-        if isinstance(container, dict) and isinstance(container.get("instance_results"), dict):
-            return container["instance_results"]
-    return {}
+        if not isinstance(container, dict):
+            continue
+        if isinstance(container.get("results"), dict):
+            merged.update(
+                {
+                    str(key): value
+                    for key, value in container["results"].items()
+                    if isinstance(value, dict)
+                }
+            )
+        if isinstance(container.get("instance_results"), dict):
+            merged.update(
+                {
+                    str(key): value
+                    for key, value in container["instance_results"].items()
+                    if isinstance(value, dict)
+                }
+            )
+    return merged
 
 
 def _result_payloads(container: dict[str, Any]) -> list[dict[str, Any]]:

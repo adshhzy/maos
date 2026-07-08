@@ -1,10 +1,9 @@
 # Unified Execution Store
 
-MAOS now has a first-stage unified persistence projection backed by SQLite.
-Temporal is still the durable execution engine, while the Execution Store gives
-the Web/API layer a stable place to read workflow, node, provider, artifact, and
-evaluation state after Temporal visibility history or provider-local caches are
-gone.
+MAOS has a unified persistence projection backed by SQLite. Temporal remains
+the durable execution engine, while the Execution Store is the primary read
+model for Web/API workflow, node, provider, artifact, human intervention, and
+evaluation state.
 
 ## Database
 
@@ -28,7 +27,8 @@ MAOS_EXECUTION_DB_FILE=D:\path\to\execution_store.sqlite3
 
 ## Tables
 
-- `workflow_runs`: one row per workflow/task graph run, including a full task snapshot.
+- `workflow_runs`: one row per workflow/task graph run. It also keeps an
+  optional raw task snapshot for audit/debug fallback.
 - `graph_definitions`: frozen graph projection used by each run.
 - `node_instances`: one row per node visit/attempt; loop iterations do not overwrite prior rows.
 - `edge_transitions`: projected control-flow edge decisions and aggregate taken/skipped counts.
@@ -43,12 +43,19 @@ MAOS_EXECUTION_DB_FILE=D:\path\to\execution_store.sqlite3
 
 The implementation is intentionally additive:
 
-- `archive_task()` and `archive_workflow_result()` write complete workflow snapshots to `workflow_runs`, `node_instances`, `edge_transitions`, human intervention, and evaluator tables.
-- Sandbox task list/detail reads refresh live Temporal snapshots into `workflow_runs` before returning Web/API data.
+- Submitting a graph writes an initial `workflow_runs`, `graph_definitions`, and
+  `node_instances` projection immediately after the Temporal workflow starts.
+- `archive_task()` and `archive_workflow_result()` write workflow snapshots to
+  `workflow_runs`, then project nodes, edges, human interventions, evaluator
+  reports, and test cases into structured tables.
+- Sandbox task list/detail reads best-effort refresh live Temporal snapshots
+  into the store, then read back through structured Execution Store
+  projections.
 - `a2a_task_store` writes provider task changes to `provider_invocations` and provider artifacts.
 - `artifact_store` writes artifact metadata rows to `artifacts`.
 
-The existing JSON archive, provider task SQLite, and artifact files remain in place for compatibility.
+The existing JSON archive, provider task SQLite, raw snapshots, and artifact
+files remain in place for compatibility.
 
 ## Current Read Paths
 
@@ -63,28 +70,39 @@ See `docs/api_reference.md` for the complete Sandbox API map.
 
 `/api/health` also returns the active execution store DB path.
 
-Primary Web/API reads now use the Execution Store:
+Primary Web/API reads now use structured Execution Store projections:
 
-- `GET /api/tasks` best-effort refreshes live Temporal task rows into the store, then returns a task list read from `workflow_runs`.
-- `GET /api/tasks/{task_id}` best-effort refreshes that task into the store, then returns the public `task_detail` projection from the stored snapshot.
-- Evaluator output rendering prefers `evaluation_reports` and `evaluation_test_cases`.
+- `GET /api/tasks` best-effort refreshes live Temporal task rows into the
+  store, then returns task rows rebuilt from `workflow_runs` plus graph/node
+  projection tables.
+- `GET /api/tasks/{task_id}` best-effort refreshes that task into the store,
+  then returns the public `task_detail` projection rebuilt from structured
+  tables. Raw `snapshot_json` is no longer the primary detail source.
+- `GET /api/human-interventions` and
+  `GET /api/tasks/{task_id}/human-interventions` read from
+  `human_interventions` after a best-effort live refresh.
+- Evaluator output rendering prefers `evaluation_reports` and
+  `evaluation_test_cases`.
 
-Temporal remains the execution engine and signal target. If a snapshot is not
-yet present in the Execution Store, the API can still fall back to a live
-Temporal manager snapshot for compatibility.
+Temporal remains the execution engine and signal target. If a workflow has not
+yet been projected into the Execution Store, the API can still fall back to a
+live Temporal manager snapshot for compatibility.
 
-The legacy archive loader can also fall back to the Execution Store if the JSON
-archive and provider-store recovery do not have a task snapshot.
+The legacy archive loader can also fall back to structured Execution Store
+projections if the JSON archive and provider-store recovery do not have a task.
 
 ## Important Boundaries
 
-- SQLite stores structured state, indexes, metadata, and JSON snapshots.
+- SQLite stores structured state, indexes, metadata, and optional raw JSON
+  snapshots for audit/debug fallback.
 - Large Agent outputs, traces, code files, and reports should remain as artifacts on disk.
-- Provider-specific recovery logic is still present for older records. Future work should collapse that logic into provider-independent store projections.
+- Provider-specific recovery logic is still present for older records. New
+  Web/API reads should prefer provider-independent store projections.
 
 ## Next Steps
 
 1. Add migration management for schema changes.
 2. Emit finer-grained `execution_events` from workflow node lifecycle activities.
-3. Move Web dashboard panels that need node timelines to direct `node_instances`/`execution_events` queries instead of snapshot JSON.
+3. Move Web dashboard timeline panels to direct `node_instances` /
+   `execution_events` queries rather than the composed task projection.
 4. Add compaction/retention policy for old snapshots and artifacts.

@@ -13,6 +13,7 @@ from typing import Any
 from maos_runtime.graph.control_flow import normalize_graph
 from maos_runtime.persistence import (
     list_workflow_runs,
+    load_workflow_task_projection,
     load_workflow_task_snapshot,
     persist_workflow_task_snapshot,
 )
@@ -78,7 +79,7 @@ def load_archived_task(task_id: str) -> dict[str, Any] | None:
     path = _archive_dir() / f"{_safe_id(task_id)}.json"
     if not path.is_file():
         recovered = recovered_task_from_provider_task_store(task_id)
-        return recovered or load_workflow_task_snapshot(task_id)
+        return recovered or load_workflow_task_projection(task_id) or load_workflow_task_snapshot(task_id)
     try:
         archived = json.loads(path.read_text(encoding="utf-8-sig"))
     except Exception:
@@ -111,7 +112,8 @@ def load_archived_tasks(limit: int | None = None) -> list[dict[str, Any]]:
 def _execution_store_task_snapshots(limit: int | None = None) -> list[dict[str, Any]]:
     snapshots: list[dict[str, Any]] = []
     for row in list_workflow_runs(limit=limit or 1000):
-        task = load_workflow_task_snapshot(str(row.get("workflow_id") or ""))
+        workflow_id = str(row.get("workflow_id") or "")
+        task = load_workflow_task_projection(workflow_id) or load_workflow_task_snapshot(workflow_id)
         if task:
             snapshots.append(task)
     return snapshots

@@ -7,8 +7,9 @@ from datetime import datetime
 from typing import Any
 
 from maos_runtime.persistence import (
-    list_workflow_runs,
+    list_workflow_task_projections,
     load_workflow_task_snapshot,
+    load_workflow_task_projection,
     persist_workflow_task_snapshot,
 )
 from maos_runtime.sandbox.api_projection import _task_list_item_for_api
@@ -65,7 +66,7 @@ def refresh_execution_store_from_live_tasks(
         if not task_id:
             stats["skipped"] += 1
             continue
-        existing = load_workflow_task_snapshot(task_id)
+        existing = load_workflow_task_projection(task_id) or load_workflow_task_snapshot(task_id)
         if existing and _choose_task_row(existing, task) is existing:
             stats["skipped"] += 1
             continue
@@ -78,24 +79,21 @@ def refresh_execution_store_from_live_tasks(
 
 
 def execution_store_task_list_items(limit: int | None = None) -> list[dict[str, Any]]:
-    """Load lightweight task rows from persisted workflow snapshots."""
+    """Load lightweight task rows from structured Execution Store projections."""
 
     rows: list[dict[str, Any]] = []
-    for workflow in list_workflow_runs(limit=limit or _store_scan_limit()):
-        workflow_id = str(workflow.get("workflow_id") or "")
+    for task in list_workflow_task_projections(limit=limit or _store_scan_limit()):
+        workflow_id = str(task.get("workflow_id") or task.get("task_id") or "")
         if not workflow_id:
-            continue
-        task = load_workflow_task_snapshot(workflow_id)
-        if not task:
             continue
         item = _task_list_item_for_api(task)
         item.setdefault("task_id", workflow_id)
         item.setdefault("workflow_id", workflow_id)
-        item.setdefault("graph_id", workflow.get("graph_id") or workflow_id)
-        item.setdefault("graph_name", workflow.get("graph_name") or item.get("graph_id"))
-        item.setdefault("status", workflow.get("status") or "unknown")
-        item.setdefault("updated_at", workflow.get("updated_at"))
-        item.setdefault("submitted_at", workflow.get("submitted_at"))
+        item.setdefault("graph_id", task.get("graph_id") or workflow_id)
+        item.setdefault("graph_name", task.get("graph_name") or item.get("graph_id"))
+        item.setdefault("status", task.get("status") or "unknown")
+        item.setdefault("updated_at", task.get("updated_at"))
+        item.setdefault("submitted_at", task.get("submitted_at"))
         item["_list_sources"] = ["execution_store"]
         rows.append(item)
     return rows

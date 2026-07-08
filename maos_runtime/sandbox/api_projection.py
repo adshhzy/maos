@@ -67,6 +67,11 @@ def _task_detail_for_api(task: dict[str, Any]) -> dict[str, Any]:
     artifacts stay available through provider/artifact/export endpoints.
     """
     item = dict(task)
+    source_projection = (
+        dict(item.get("_projection"))
+        if isinstance(item.get("_projection"), dict)
+        else {}
+    )
 
     state = item.get("state")
     item["state"] = _slim_detail_state_for_api(state if isinstance(state, dict) else {})
@@ -80,6 +85,9 @@ def _task_detail_for_api(task: dict[str, Any]) -> dict[str, Any]:
     item["_projection"] = {
         "name": "task_detail",
         "version": 1,
+        "source": source_projection.get("source"),
+        "source_version": source_projection.get("version"),
+        "snapshot_available": source_projection.get("snapshot_available"),
         "full_outputs": "Use local-runtime-output, artifact content, or export endpoints for complete node payloads.",
     }
     return item
