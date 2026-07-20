@@ -73,9 +73,11 @@ python sandbox_service.py
 | Temporal gRPC | `7233` |
 | Temporal UI | `8233` |
 | Temporal DB | `D:\dev\MAOS\temporal-data\temporal.db` |
+| Execution Store DB | `D:\dev\MAOS\temporal-data\execution_store.sqlite3` |
 | Provider Task DB | `D:\dev\MAOS\temporal-data\maos_runtime.db` |
+| Artifact Store | `D:\dev\MAOS\temporal-data\artifacts\` |
 
-生产或长期运行时，建议把 `temporal-data` 放在单独的数据盘，并定期备份 `temporal.db` 和 `maos_runtime.db`。`a2a-invocations.json` 仅作为旧版本兼容镜像，不再作为恢复或排查的默认数据源。
+生产或长期运行时，建议把 `temporal-data` 放在单独的数据盘，并定期备份 `temporal.db`、`execution_store.sqlite3`、`maos_runtime.db` 和 `artifacts` 目录。`execution_store.sqlite3` 是 Web/API 的主读模型；`maos_runtime.db` 保存 provider/A2A task 快照和幂等恢复信息；`a2a-invocations.json` 仅作为旧版本兼容镜像，不再作为恢复或排查的默认数据源。
 
 ## 4. 打包代码
 

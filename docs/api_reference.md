@@ -68,12 +68,12 @@ OpenAPI UI: `GET /docs`
 
 | Method | Path | Description |
 | --- | --- | --- |
-| `GET` | `/api/tasks` | List task rows for the dashboard, merged from live runtime and Execution Store |
+| `GET` | `/api/tasks` | List task rows for the dashboard from Execution Store primary projections, after best-effort live refresh |
 | `GET` | `/state` | Compatibility alias for `/api/tasks` |
 | `POST` | `/api/tasks` | Create one or more workflow tasks from JSON task graphs |
 | `POST` | `/run-batch` | Compatibility alias for `/api/tasks` |
 | `POST` | `/api/preview` | Validate and preview task graph execution state without starting workflows |
-| `GET` | `/api/tasks/{task_id}` | Get one projected task detail view |
+| `GET` | `/api/tasks/{task_id}` | Get one projected task detail view from the Execution Store primary read model, after best-effort live refresh |
 | `POST` | `/api/tasks/{task_id}/export-markdown` | Export final outputs or one node output to Markdown |
 | `POST` | `/api/tasks/{task_id}/export-replay` | Generate replay frames and an animated replay artifact from completed task history |
 
@@ -455,7 +455,7 @@ Built-in backends:
 | --- | --- | --- |
 | `simulator` | `SimulatorProvider` | Local test/simulation provider, supports callbacks and resume |
 | `multica` | `MulticaProvider` | External Multica Agent Service provider |
-| `hermes` | `HermesOneshotProvider` | Direct Hermes one-shot provider through Agent Service facade |
+| `hermes` | `HermesOneshotProvider` | Hermes lightweight/one-shot provider through Agent Service facade |
 | `codex` | `CodexCliProvider` | Local Codex CLI provider |
 | `claude` | `ClaudeCliProvider` | Local Claude CLI provider |
 | `claude-huawei` | `ClaudeHuaweiCliProvider` | Local Claude CLI routed to Huawei Cloud DeepSeek |
@@ -493,18 +493,44 @@ Minimum shape:
 }
 ```
 
-Common node types:
+Common node categories:
 
-| Type | Purpose |
+| Category | Purpose |
 | --- | --- |
-| `agent` | Dispatch work to a provider-backed Agent |
-| `simulator` | Simulated execution |
-| `human` | Planned human-in-the-loop step |
-| `decision` / control-flow gate | Route execution by structured result |
-| `evaluator` | Deterministic evaluation node |
+| `type: "agent"` | Dispatch work to a provider-backed Agent |
+| `agent.backend: "simulator"` | Simulated execution |
+| `type: "human"` / `type: "approval"` | Planned human-in-the-loop step |
+| `type: "condition"` / `decision` / `router` / `branch` | Route execution by structured result |
+| `agent.backend: "evaluator"` | Deterministic evaluation node |
 
 Control-flow graphs support normal dependency edges, conditional branches, and
 bounded loops. Graph validation happens before workflow submission.
+
+Built-in backends:
+
+| Backend | Purpose |
+| --- | --- |
+| `simulator` | Local simulator and tests |
+| `multica` | Multica daemon through Agent Service API v1 |
+| `hermes` | Hermes lightweight mode through Agent Service API v1 |
+| `codex` | Local Codex CLI runtime |
+| `claude` | Local Claude CLI runtime |
+| `claude-huawei` | Local Claude CLI routed to Huawei/DeepSeek |
+| `evaluator` | Deterministic local evaluator |
+
+Graph-level scheduling can be limited with:
+
+```json
+{
+  "execution_policy": {
+    "mode": "serial",
+    "max_concurrent_nodes": 1
+  }
+}
+```
+
+This limits ready-node execution within one graph and is useful for rate-limited
+Agent backends. Omit it to keep the default parallel scheduling.
 
 ## Artifact Transfer API
 
@@ -541,7 +567,10 @@ In `ref` mode, downstream A2A messages carry:
 }
 ```
 
-In `inline` mode, downstream messages include compact business content directly.
+In `inline` mode, downstream messages include business content directly after
+removing runtime-only noise fields such as traces, comments, runs, messages,
+and duplicate dependency artifacts. Long business text strings are not
+truncated by this transfer step.
 
 ## Related Documents
 

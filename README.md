@@ -4,9 +4,10 @@ This project contains Temporal Python SDK examples. The main example is a
 generic JSON control-flow graph interpreter for a persistent multi-Agent
 execution sandbox: it reads one or more graphs from JSON, starts one Temporal
 workflow per task, schedules runnable Agent nodes by dependency/control edges,
-executes ready nodes in parallel, supports conditional branches and bounded
-loops, and wakes workflows from either simulator callbacks or durable status
-polling of a real Multica-backed Agent Service.
+executes ready nodes in parallel or with graph-level concurrency limits,
+supports conditional branches and bounded loops, and wakes workflows from
+simulator callbacks, Agent Service API v1 polling, or local provider runtime
+completion.
 
 ## Run
 
@@ -95,15 +96,15 @@ In split-process mode, the Web UI is only a browser client and local API proxy.
 The FastAPI sandbox API creates workflows, queries Temporal, and sends workflow
 signals. The worker process owns workflow/activity execution.
 
-The sandbox can also connect to the already running Multica Agent Service
-facade:
+The sandbox can also connect to the Agent Service facade used by external
+Agent backends such as Multica and Hermes:
 
 ```text
 Agent Service API:    http://127.0.0.1:8091
 ```
 
-The Multica Agent Service facade now lives inside this repository. Start it
-from this project when real Multica nodes are needed:
+The Agent Service facade now lives inside this repository. Start it from this
+project when `backend=multica` or `backend=hermes` nodes are needed:
 
 ```powershell
 cd D:\dev\MAOS\temporal_execution_core
@@ -150,9 +151,10 @@ embedded dev server:
 
 The web UI draws each control-flow graph as an SVG graph, colors nodes by
 execution status, shows dependency/control edges, lets you select a node for
-details, and refreshes
-`/api/tasks` every 30 seconds. Use `Refresh Now` to trigger an immediate
-on-demand read from Temporal.
+details, and refreshes `/api/tasks` every 30 seconds. Use `Refresh Now` to
+trigger an immediate on-demand refresh. The Sandbox API uses the SQLite
+Execution Store as the primary read model and performs best-effort live
+Temporal refreshes while workflows are still running.
 
 The `All Tasks Board` above the graph summarizes the whole batch:
 
@@ -258,16 +260,20 @@ data transfer between dependent or control-flow-linked Agent nodes. The local ad
 `maos_runtime.a2a` follows the A2A shape of AgentCard, Message, Part, Task,
 TaskStatus, and Artifact:
 
-- Temporal invokes the node's local Agent and gives it an A2A `Message`.
+- Temporal invokes the node provider and gives it an A2A `Message`.
 - The A2A message carries upstream dependency data as referenced A2A
   `Artifact` objects from completed parent Agent tasks.
 - The Agent immediately returns an A2A `Task` in `TASK_STATE_WORKING`.
 - A simulator-backed node posts a callback to the sandbox API when the mock
   work completes.
-- A Multica-backed node is created through `POST /api/v1/agent-tasks` on the
-  Agent Service facade. The workflow uses durable Temporal timers and short
-  polling activities to query `GET /api/v1/agent-tasks/{id}`.
-- Both backends are normalized into completed A2A `Task`/`Artifact` objects.
+- Agent Service backed nodes, currently `multica` and `hermes`, are created
+  through `POST /api/v1/agent-tasks` on the Agent Service facade. The workflow
+  uses durable Temporal timers and short polling activities to query
+  `GET /api/v1/agent-tasks/{id}`.
+- Local provider nodes, currently `codex`, `claude`, `claude-huawei`, and
+  `evaluator`, use the same Provider Runtime API v1 lifecycle:
+  `create`, `poll`, `cancel`, `resume`, `events`, and `artifacts`.
+- All backends are normalized into completed A2A `Task`/`Artifact` objects.
 - The workflow reads the node result from the A2A `Artifact` data part.
 - Downstream Agent nodes receive those result artifacts through their own A2A
   input messages.
@@ -278,7 +284,7 @@ Temporal activities no longer sleep for the whole node runtime. Instead:
 - The workflow sets the node to `suspended`.
 - Simulator nodes wait with `workflow.wait_condition(...)` until the callback
   is converted to `agent_node_completed(...)`.
-- Multica nodes use `workflow.sleep(...)` plus short `poll_agent_node`
+- Polling providers use `workflow.sleep(...)` plus short `poll_agent_node`
   activities. The sleep is durable and does not hold a worker thread.
 - No worker thread is held while the Agent is running.
 - Callback or poll fields update `backend`, `agent_service_task_id`,
@@ -289,9 +295,13 @@ By default simulator jobs run for a random duration between 5 and 120 seconds.
 Examples can override this with `simulate.min_seconds` and
 `simulate.max_seconds`.
 
-## JSON Control-Flow Format
+## JSON Task Graph Format
 
-Top-level fields:
+Task graphs are the public declarative API for workflow orchestration. The
+formal schema is `schemas/task_graph.schema.json`, and the full authoring guide
+is `docs/task_graph_json_format.md`.
+
+Minimum shape:
 
 ```json
 {
@@ -300,7 +310,16 @@ Top-level fields:
   "graph_type": "control_flow",
   "input": {},
   "start": "first_node",
-  "nodes": [],
+  "nodes": [
+    {
+      "id": "first_node",
+      "type": "agent",
+      "operation": "agent_task",
+      "agent": {
+        "backend": "simulator"
+      }
+    }
+  ],
   "edges": []
 }
 ```
@@ -309,171 +328,56 @@ The historic DAG shorthand still works: omit `edges` and put dependency ids in
 each node's `deps`. The interpreter converts those dependencies into
 unconditional edges and keeps `join=all`, so old examples continue to run.
 
-Each node supports:
+Supported built-in backends are:
 
-```json
-{
-  "id": "node_id",
-  "label": "Human readable node label",
-  "type": "agent",
-  "operation": "emit",
-  "deps": ["upstream_node_id"],
-  "join": "all",
-  "max_visits": 1,
-  "params": {},
-  "timeout_seconds": 10,
-  "agent": {
-    "backend": "simulator"
-  },
-  "simulate": {
-    "min_seconds": 0.5,
-    "max_seconds": 4.8
-  }
-}
-```
+- `simulator`: local random-duration simulator.
+- `multica`: external Multica Agent through Agent Service API v1.
+- `hermes`: Hermes lightweight mode through Agent Service API v1.
+- `codex`: local Codex CLI provider.
+- `claude`: local Claude CLI provider.
+- `claude-huawei`: local Claude CLI provider routed to Huawei/DeepSeek.
+- `evaluator`: deterministic local evaluator.
 
-`type=agent` is the default and means one Agent invocation. `type=condition`
-is an internal control node that completes immediately and is usually followed
-by conditional outgoing edges. `join=all` waits for every predecessor edge;
-`join=any` runs when any incoming edge arrives, which is useful for branches
-and loop-back nodes. `max_visits` bounds re-entry for looped nodes.
-
-Explicit edges support branch conditions:
-
-```json
-{
-  "from": "review_gate",
-  "to": "revise_notes",
-  "when": "visits.review_gate < 2",
-  "label": "needs revision"
-}
-```
-
+Explicit `edges` support dependency edges, branch conditions, and bounded loops.
 The `when` expression is evaluated inside the Temporal workflow from recorded
 workflow state only. It can read `input`, `results`, `deps`, `last`, `result`,
 `visits`, and `attempts`. This keeps replay deterministic. Loops must be
 bounded by `max_visits` and/or top-level `max_total_visits`.
 
-Any nodes whose join condition is satisfied become runnable together, so
-parallelism still comes directly from the graph structure.
+Graph-level `execution_policy` can limit ready-node scheduling. For example,
+use `{"mode": "serial", "max_concurrent_nodes": 1}` for rate-limited Agent
+runtimes while leaving other task graphs in the default parallel mode.
 
-Nodes default to the simulator backend. To run a node on the real Multica
-Agent Service, set `agent.backend` to `multica` and choose an Agent by
-`agent_key`, `agent_id`, or `agent_name`.
-
-Multica nodes default to the requested real Multica Agent. `context_policy`
-only controls how much context is sent to the Agent; for example,
-`provided_context_only` sends the control-flow node instruction, original task input,
-and upstream node results without duplicating workspace data. To make the handoff explicit, set
-`execution_mode=multica` and choose `runtime_profile=codex`.
-
-```json
-{
-  "id": "architecture_review",
-  "label": "Real architecture agent",
-  "operation": "agent_task",
-  "deps": ["prepare_brief"],
-  "agent": {
-    "backend": "multica",
-    "agent_key": "architect",
-    "context_policy": "provided_context_only",
-    "runtime_profile": "codex",
-    "execution_mode": "multica",
-    "status": "in_progress",
-    "priority": "high",
-    "poll_seconds": 30,
-    "prompt": "Produce an architecture integration plan, then add it as a Multica comment and move the task to in_review or done."
-  },
-  "timeout_seconds": 7200
-}
-```
-
-If a node should bypass Multica entirely and use the local Hermes one-shot
-runtime directly, set `agent.backend` to `hermes`:
-
-```json
-{
-  "agent": {
-    "backend": "hermes",
-    "agent_key": "fast_reviewer",
-    "context_policy": "provided_context_only",
-    "runtime_profile": "hermes_oneshot",
-    "execution_mode": "hermes_oneshot",
-    "poll_seconds": 30,
-    "prompt": "Use only the task input and upstream node results, then return the final node result."
-  }
-}
-```
-
-The older compatibility path is still available through AgentService by using
-`backend=multica` with `execution_mode=lightweight_hermes_oneshot`. That path
-still creates a Multica task and writes the Hermes output back as a Multica
-comment, while `backend=hermes` avoids Multica task/comment/status handling.
-
-For token control, the adapter does not duplicate full structured payloads into
-Multica metadata by default. Set `agent.include_payload_metadata` to `true`
-only for debugging small payloads. Completed Multica results include recent
-comments and run summaries; raw run messages are skipped unless
-`AGENT_SERVICE_FETCH_RUN_MESSAGES=true` is set.
-
-Path references inside `params` use `$input.foo` and `$deps.node_id.field`.
-Template strings use `${input_foo}` and `${deps_node_id_field}`.
-
-Supported operations:
-
-- `emit`: resolves and returns `params`.
-- `merge`: returns resolved params plus dependency payloads.
-- `template`: renders `params.fields` using template variables.
-- `count`: counts a list from `params.values`.
-- `percentage_from_count`: computes `min(cap, count * multiplier)`.
-- `status`: returns a status plus optional details.
-- `join`: builds an output object from `params.fields`.
-
-The order-processing example is an old-style dependency graph described as JSON in
-`examples/order_processing.json`:
-
-```text
-load_order -> count_items
-load_order -> validate_customer
-load_order -> reserve_inventory
-count_items -> calculate_discount
-validate_customer + calculate_discount -> fraud_check
-reserve_inventory + fraud_check -> charge_payment
-charge_payment -> arrange_shipping
-charge_payment -> send_notification
-arrange_shipping + send_notification -> close_order
-```
-
-The second example, `examples/content_pipeline.json`, models a content
-publishing workflow with parallel copy, SEO, and legal review branches.
-`examples/control_flow_review_loop.json` demonstrates explicit control edges,
-conditional branches, and a bounded loop that exits through an approval branch.
-
-Most bundled examples are backed by the simulator and run for a random duration
-up to 120 seconds by default. `examples/mixed_multica_simulator.json` mixes
-real Multica Agent nodes with simulator nodes in one graph. The web UI does not
-keep a background task monitor. It reads
-Temporal workflow visibility and, only when refreshed, queries each workflow's
-`graph_state` or completed result.
+Dependency artifacts can be passed by reference or inline. Reference mode sends
+`artifact_ref`, `uri`, `content_hash`, `mime_type`, `size`, and `summary`;
+inline mode embeds content for Agent runtimes that cannot fetch the artifact
+API. See `docs/artifact_external_storage.md`.
 
 ## Files
 
-- `maos_runtime/` contains the Temporal workflow, A2A runtime, provider registry,
-  task store, runtime config, and HTTP helper code.
+- `maos_runtime/` contains the Temporal workflow, graph interpreter, A2A runtime,
+  provider registry, runtime config, persistence projection, and HTTP helper code.
 - `web/` contains the sandbox HTTP handlers, Agent trace proxy, and browser UI template.
 - `simulator/` contains the random-duration simulator microservice and backend helpers.
-- `services/sandbox_service.py` wires together the Web API/UI, Temporal runtime manager,
-  and simulator service. Root `sandbox_service.py` is a compatibility entrypoint.
-- `services/agent_service/` contains the Multica Agent Service facade used by
-  real Agent backends.
+- `maos_runtime/persistence/` contains the SQLite Execution Store used as the
+  primary Web/API read model.
+- `services/sandbox_service.py` wires together the Web API/UI, Temporal runtime
+  manager, and simulator service for local development. Root `sandbox_service.py`
+  is a compatibility entrypoint.
+- `services/agent_service/` contains the Agent Service facade used by Multica
+  and Hermes backends.
 - `scripts/` contains CLI helpers such as `run_dag.py`, `visualize_execution.py`,
   and the simple Temporal greeting example.
 - Root `run_dag.py`, `visualize_execution.py`, and `simulator_service.py` are thin
   compatibility entrypoints.
 - `examples/order_processing.json` describes the previous order example as data.
 - `examples/content_pipeline.json` describes a different dependency graph with another shape.
-- `examples/*.json` contains bundled graphs for batch runs, including a mixed
-  Multica + simulator graph.
-- `docs/` contains the task graph JSON format, Multica integration API, and Hermes notes.
+- `example_cmp/*.json` contains comparison graphs such as single-Agent versus
+  multi-Agent coding and research examples.
+- `examples/*.json` contains bundled graphs for batch runs, including mixed
+  provider, human-in-loop, branch, and loop examples.
+- `schemas/task_graph.schema.json` is the formal task graph JSON Schema.
+- `docs/` contains the task graph format, API reference, provider lifecycle,
+  Agent Service, artifact, human-in-loop, and deployment notes.
 - `tests/agent_service/` contains tests for the Multica facade.
 - `requirements.txt` pins the Temporal Python SDK and service dependencies.

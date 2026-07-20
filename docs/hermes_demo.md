@@ -1,142 +1,82 @@
-#!/usr/bin/env python3
-"""Simple demonstration of the MAOS Hermes Agent Service backend."""
+# Hermes Backend 使用说明
 
-import json
-import sys
-import os
+`backend: "hermes"` 表示任务图节点通过 MAOS Agent Service API v1 调用 Hermes lightweight/one-shot 运行模式。它复用统一的 Provider Runtime 生命周期和 A2A 数据结构，但不经过 Multica 的任务评论/status 工作流。
 
-print("=== MAOS Direct Hermes Agent Node Demonstration ===\n")
+## 运行路径
 
-print("1. OVERVIEW")
-print("=" * 50)
-print("The MAOS Hermes backend is a provider adapter that executes")
-print("control-flow graph nodes through Agent Service API v1. The Agent Service")
-print("can run Hermes CLI in lightweight one-shot mode without Multica task")
-print("comment/status orchestration.")
-print()
+```text
+Temporal workflow
+  -> Provider Runtime API v1
+  -> HermesOneshotProvider
+  -> Agent Service API v1 POST /api/v1/agent-tasks
+  -> Hermes CLI lightweight/one-shot runtime
+  -> Agent Service API v1 GET /api/v1/agent-tasks/{task_id}
+  -> A2A Task / Artifact
+  -> workflow resume
+```
 
-print("2. KEY FEATURES")
-print("=" * 50)
-print("• Agent Service API v1 task creation for backend=hermes")
-print("• Polling-based completion through provider lifecycle hooks")
-print("• Configurable via node.agent settings in JSON graphs")
-print("• A2A provider lifecycle integration")
-print("• A2A-compatible task/artifact format")
-print("• Support for model, provider, toolsets, skills configuration")
-print()
+Temporal workflow 在 Hermes 执行期间使用 durable timer + 短轮询 activity，不占用 worker 线程长时间等待。
 
-print("3. NODE CONFIGURATION")
-print("=" * 50)
-print("To use Hermes backend in a control-flow graph node:")
-print()
+## 节点配置
 
-hermes_node_config = {
-    "id": "my_hermes_node",
-    "label": "My Hermes Agent Task",
-    "operation": "agent_task",
-    "agent": {
-        "backend": "hermes",  # or "hermes-oneshot", "direct-hermes"
-        "agent_key": "analysis_agent",
-        "context_policy": "provided_context_only",
-        "runtime_profile": "hermes_oneshot",
-        "execution_mode": "hermes_oneshot",
-        "poll_seconds": 30,
-        "timeout_seconds": 300,
-        "prompt": "Analyze the input data and provide insights.",
-        # Optional Hermes-specific settings:
-        "model": "deepseek-v3.2",
-        "provider": "deepseek",
-        "toolsets": "code,web,file",
-        "skills": "analysis,summarization",
-        "workdir": "/path/to/working/directory",
-        "ignore_user_config": True,
-        "ignore_rules": True
-    }
+```json
+{
+  "id": "hermes_fast_review",
+  "label": "Hermes 快速评审",
+  "operation": "agent_task",
+  "deps": ["draft"],
+  "agent": {
+    "backend": "hermes",
+    "agent_key": "fast_reviewer",
+    "context_policy": "provided_context_only",
+    "runtime_profile": "hermes_oneshot",
+    "execution_mode": "hermes_oneshot",
+    "poll_seconds": 30,
+    "timeout_seconds": 900,
+    "artifact_transfer_mode": "inline",
+    "prompt": "请只基于原始任务和上游 draft 结果完成快速评审，并输出结论。"
+  }
 }
+```
 
-print(json.dumps(hermes_node_config, indent=2))
-print()
+兼容别名包括 `hermes-oneshot`、`direct-hermes`、`hermes-direct`，都会被 provider registry 归一化为 `hermes`。
 
-print("4. ENVIRONMENT VARIABLES")
-print("=" * 50)
-print("HERMES_BIN: Path to hermes executable (default: D:\\dev\\MAOS\\AgentRuntime\\hermes.cmd)")
-print("HERMES_WORKDIR: Working directory for Hermes execution")
-print("HERMES_PROVIDER_MODEL: Default model (e.g., 'deepseek-v3.2')")
-print("HERMES_PROVIDER_PROVIDER: Default provider (e.g., 'deepseek')")
-print("HERMES_PROVIDER_POLL_SECONDS: Polling interval (default: 30)")
-print("HERMES_PROVIDER_MAX_WORKERS: Thread pool size (default: 4)")
-print("HERMES_PROMPT_PAYLOAD_LIMIT: Max prompt size (default: 30000)")
-print("HERMES_GIT_BASH_PATH: Git Bash path on Windows")
-print()
+## 环境变量
 
-print("5. EXECUTION FLOW")
-print("=" * 50)
-print("1. Temporal workflow invokes node activity")
-print("2. maos_runtime.a2a.send_message() creates a Hermes Agent Service task")
-print("3. Agent Service starts the Hermes CLI command")
-print("4. Workflow suspends, polls with poll_task()")
-print("5. When Hermes completes, result is projected through Agent Service v1")
-print("6. Task marked completed, workflow resumes")
-print()
+| 变量 | 说明 |
+| --- | --- |
+| `AGENT_SERVICE_API_BASE` | Agent Service API 地址，默认 `http://127.0.0.1:8091`。 |
+| `HERMES_BIN` | Hermes 可执行文件路径。 |
+| `HERMES_WORKDIR` | Hermes 运行工作目录。 |
+| `HERMES_PROVIDER_MODEL` | 默认模型。 |
+| `HERMES_PROVIDER_PROVIDER` | 默认模型供应商。 |
+| `HERMES_PROVIDER_POLL_SECONDS` | provider 默认轮询间隔。 |
+| `HERMES_PROMPT_PAYLOAD_LIMIT` | prompt 载荷上限。 |
+| `HERMES_GIT_BASH_PATH` | Windows 上需要 Git Bash 时的路径。 |
 
-print("6. COMMAND GENERATION")
-print("=" * 50)
-print("Hermes command generated:")
-print("  cmd.exe /c hermes.cmd --ignore-user-config --ignore-rules \\")
-print("    --model deepseek-v3.2 --provider deepseek \\")
-print("    --toolsets code,web,file --skills analysis,summarization \\")
-print("    -z '<prompt>'")
-print()
+## 和 Multica Backend 的区别
 
-print("7. PROMPT TEMPLATE")
-print("=" * 50)
-print("The prompt includes:")
-print("• Context policy instructions")
-print("• Node-specific instruction")
-print("• Original task input")
-print("• Upstream node results (if any)")
-print("• Execution boundary instructions")
-print()
+| 项目 | `backend: "hermes"` | `backend: "multica"` |
+| --- | --- | --- |
+| 外部 API | Agent Service API v1 | Agent Service API v1 |
+| 底层 runtime | Hermes lightweight/one-shot | Multica daemon 中的目标 Agent |
+| 是否创建 Multica task | 否 | 是 |
+| 是否依赖 Multica comment/status | 否 | 是 |
+| 适用场景 | 快速分析、轻量评审、低开销节点 | 需要 Multica 角色 Agent、技能和界面协作的节点 |
 
-print("8. ADVANTAGES OVER MULTICA BACKEND")
-print("=" * 50)
-print("• No Multica task creation overhead in the workflow path")
-print("• No Multica comments/status dependency for orchestration")
-print("• Agent Service v1 facade keeps the provider API stable")
-print("• Lower latency for simple tasks")
-print("• Better isolation from Multica-specific task/comment history")
-print("• Suitable for testing/development when Hermes is installed")
-print()
+如果需要走 Multica 但内部由 Hermes 执行，可使用 `backend: "multica"` 并在 Multica/Agent Service 配置中选择对应 execution mode。任务图里直接写 `backend: "hermes"` 时，语义是“绕开 Multica task/comment/status 编排，直接通过 Agent Service facade 调 Hermes”。
 
-print("9. USE CASES")
-print("=" * 50)
-print("• Simple data transformation/analysis")
-print("• Local file processing")
-print("• Development/testing workflows")
-print("• When Multica is unavailable")
-print("• Low-latency agent tasks")
-print("• Batch processing with many nodes")
-print()
+## 相关示例
 
-print("10. EXAMPLE WORKFLOW")
-print("=" * 50)
-print("See: examples/all_hermes_chinese_knowledge_assistant_launch.json")
-print("See: examples/mixed_hermes_multica_simulator.json")
-print()
+```text
+examples/all_hermes_chinese_knowledge_assistant_launch.json
+examples/mixed_hermes_multica_simulator.json
+examples/all_hermes_control_flow_branch_loop_knowledge_release.json
+```
 
-print("11. CURRENT STATUS")
-print("=" * 50)
-print("✓ maos_runtime.a2a module loaded successfully")
-print("✓ Hermes provider available")
-print("✓ Task creation working")
-print("✗ Hermes binary not found at default location")
-print()
+## 排查
 
-print("To configure Hermes:")
-print("1. Install Hermes CLI")
-print("2. Set HERMES_BIN environment variable")
-print("3. Or modify the Hermes provider configuration in maos_runtime.a2a.providers")
-print("4. Test with the Sandbox API or an example graph using backend=hermes")
-print()
-
-print("The system is ready to execute Hermes nodes once Hermes CLI is installed!")
+- Sandbox API 健康检查：`GET http://127.0.0.1:8766/api/health`
+- Agent Service 健康检查：`GET http://127.0.0.1:8091/health`
+- Agent Service v1 capabilities：`GET http://127.0.0.1:8091/api/v1/capabilities`
+- Web UI 节点详情里可查看 Agent Input、Agent Trace、Agent Final Output 和 artifacts。

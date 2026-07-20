@@ -4,7 +4,8 @@ MAOS can pass upstream node outputs to downstream Agent nodes in two modes:
 
 - `ref`: store the full artifact externally and pass only an artifact reference
   through the A2A message.
-- `inline`: pass compact business content directly through the A2A message.
+- `inline`: pass business content directly through the A2A message after
+  removing runtime-only noise fields.
 
 The current default is `ref`.
 
@@ -96,8 +97,14 @@ Allowed values:
 
 - `ref`: A2A carries artifact references; downstream Agent can fetch full
   content through the artifact API.
-- `inline`: A2A carries compact business content directly; useful for Agent
-  Services that cannot access the artifact API.
+- `inline`: A2A carries business content directly; useful for Agent Services
+  that cannot access the artifact API.
+
+In `inline` mode, the adapter removes runtime-only fields such as dependency
+logs, traces, messages, comments, runs, duplicate dependency artifacts, and
+human-intervention bookkeeping. It does not truncate long text strings in the
+business payload. List values may still be lightly bounded to keep dependency
+context sane.
 
 ## Design Boundary
 

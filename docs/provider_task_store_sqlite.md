@@ -33,6 +33,11 @@ MAOS_DATA_DIR
 `provider_events` and `provider_artifacts` are reserved for the next step of
 storing normalized event streams and artifact metadata separately.
 
+This database is the durable provider/A2A invocation store. It is used for
+idempotency recovery, provider task polling, and runtime-output lookup. The
+workflow/task dashboard read model is `execution_store.sqlite3`; provider task
+records are also projected there as `provider_invocations` where possible.
+
 ## Compatibility
 
 The in-memory `TASKS` dict still exists as a compatibility cache for the current
@@ -45,5 +50,6 @@ from memory.
 A2A_DISABLE_JSON_INVOCATION_MIRROR=1
 ```
 
-This keeps older Web UI recovery paths and local debugging tools working while
-SQLite becomes the durable provider task store.
+This keeps older recovery paths and local debugging tools working while SQLite
+remains the durable provider task store. New Web/API task list and task detail
+reads should prefer the unified Execution Store projection.

@@ -13,6 +13,11 @@ The Python validator is:
 maos_runtime.graph.schema.validate_task_graph
 ```
 
+The JSON Schema is intentionally extension-friendly. Provider-specific fields
+may be added under `agent`, `params`, or top-level metadata, while the Python
+semantic validator enforces stable graph references, branch expression syntax,
+and DAG/control-flow constraints.
+
 Command-line validation:
 
 ```powershell
@@ -39,7 +44,9 @@ Optional:
 - `max_total_visits`: maximum total node executions across loops.
 - `execution_policy`: optional graph-level scheduling policy. Use
   `{"mode": "serial", "max_concurrent_nodes": 1}` to run ready nodes one at a
-  time; omit it to keep the default parallel scheduling.
+  time; omit it to keep the default parallel scheduling. Compatible mode names
+  are `serial`, `sequential`, `single`, and `one_at_a_time`.
+- `executionPolicy`: compatibility alias for `execution_policy`.
 - `edges`: explicit control-flow edges.
 
 If `edges` is omitted, dependencies are inferred from `node.deps` and the graph
@@ -90,6 +97,39 @@ Agent node options:
   }
 }
 ```
+
+Built-in `agent.backend` values:
+
+| Backend | Description |
+| --- | --- |
+| `simulator` | Local simulator provider for tests, demos, random runtime, and simulated human intervention |
+| `multica` | External Multica Agent through Agent Service API v1 |
+| `hermes` | Hermes lightweight/one-shot mode through Agent Service API v1 |
+| `codex` | Local Codex CLI provider |
+| `claude` | Local Claude CLI provider |
+| `claude-huawei` | Local Claude CLI routed to Huawei/DeepSeek |
+| `evaluator` | Deterministic local evaluator provider |
+
+Common aliases are normalized by the provider registry, such as
+`direct-hermes`, `codex-cli`, `claude-cli`, `deepseek-v3.2`, and
+`deterministic-evaluator`.
+
+Artifact transfer options:
+
+```json
+{
+  "agent": {
+    "backend": "claude",
+    "artifact_transfer_mode": "ref"
+  }
+}
+```
+
+Use `ref` to pass only `artifact_ref`, `uri`, `content_hash`, `mime_type`,
+`size`, and `summary` to downstream nodes. Use `inline` when an Agent runtime
+cannot access the artifact API and must receive upstream business content
+directly. Inline mode removes runtime-only noise fields but does not truncate
+long business text strings. `dependency_artifact_mode` is a compatibility alias.
 
 Simulator options:
 
@@ -217,6 +257,8 @@ The validator performs both JSON Schema and semantic checks:
 - branch expressions in `edge.when` must be valid Python expression syntax.
 - inferred DAGs without explicit `edges` must be acyclic.
 - explicit `edges` with `graph_type: "dag"` must be acyclic.
+- graph-level `execution_policy` is normalized to either parallel scheduling or
+  a positive max-concurrent-node limit.
 
 Control-flow graphs may contain loops, but must use bounded visit counts:
 
@@ -251,3 +293,6 @@ except GraphValidationError as exc:
 The schema allows additional properties so existing examples and future provider
 extensions remain compatible. Stable cross-field behavior is enforced by the
 Python semantic validator rather than only by JSON Schema.
+
+For a fuller authoring guide with Chinese examples, see
+`docs/task_graph_json_format.md`.
